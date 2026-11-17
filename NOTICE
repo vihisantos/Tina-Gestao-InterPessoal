@@ -1,0 +1,32 @@
+# NOTICE — Avisos de terceiros
+
+Este arquivo é o registro público de avisos e atribuições de materiais de terceiros que estejam
+**efetivamente presentes** no repositório. Ele não lista desejos, intenções ou componentes
+inexistentes, e nenhum aviso antigo de outro projeto é transportado para cá.
+
+**Estado atual (bootstrap):** este repositório **não contém nenhum material de terceiros**. Não há
+código, fontes, ícones, imagens, modelos, pesos de IA ou fontes tipográficas incorporadas.
+
+## Como um item entra neste NOTICE
+
+Um componente só passa a constar aqui quando:
+
+1. seu registro foi criado em `docs/provenance/REGISTER.md` (origem, URL, versão, SPDX, integridade);
+2. a licença foi verificada neste momento, pelo proprietário ou por revisor designado;
+3. o arquivo de aviso original (copyright notice, texto de licença) foi reproduzido **integralmente**,
+   sem edições, quando a licença assim exigir;
+4. a entrada lista o quê foi incorporado e onde (caminhos no repositório).
+
+Template de entrada:
+
+```
+- Nome do componente — <URL> — versão <x.y.z>
+  Origem: <repositório/registro>
+  Licença: <SPDX identificador>
+  Arquivos incorporados: <caminhos>
+  Aviso(s) reproduzido(s): <texto integral>
+  Entrada de proveniência: REGISTER.md#<âncora>
+```
+
+**Nenhuma entrada até que haja algo a registrar.** Quando a primeira dependência entrar, este
+arquivo passará a ser atualizado dentro do mesmo PR, obrigatoriamente.

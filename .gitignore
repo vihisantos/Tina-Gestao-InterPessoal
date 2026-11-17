@@ -1,0 +1,85 @@
+# Editor and OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# IDEs
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Build outputs
+dist/
+out/
+build/
+.svelte-kit/
+target/
+bin/
+obj/
+coverage/
+
+# Dependencies (instaladas localmente, nunca versionadas)
+# Cobre todas as profundidades, inclusive packages/<n>/node_modules/.
+node_modules/
+
+# Runtime data and local state
+*.db
+*.db-wal
+*.db-shm
+logs/
+tmp/
+temp/
+*.log
+*.tmp
+
+# Environment and secrets — nunca versionar
+.env
+.env.*
+*.pem
+*.key
+*.ppk
+secrets/
+local/
+
+# Package manager artifacts locais
+.npm/
+.pnpm-cache/
+yarn-error.log
+
+# Artefatos do ciclo de desenvolvimento (nunca cegam a árvore silenciosamente)
+.tina-build/
+.temp/
+
+# Windows packaging temp
+*.exe.blockmap
+*.msi.blockmap
+
+# Tauri build artifacts
+.tauri/
+
+# IDE e build temporários
+*.orig
+*.bak
+*.cache/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.AppleDouble
+.LSOverride
+._*
+
+# Dados pessoais / credenciais locais
+!example.env.example
+
+# Scripts de geração de ícones (não versionar)
+src-tauri/icons/create-*.js
+src-tauri/icons/*.ico

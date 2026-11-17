@@ -1,0 +1,65 @@
+# Verificação mínima e honesta para este estágio do projeto.
+# O que existe: governança em texto. O que não existe: código, testes, dependências.
+# Cada passo verifica algo real; nenhum passo simula resultado.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: governance checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Required governance files exist and are non-empty
+        run: |
+          set -euo pipefail
+          for f in README.md CONTRIBUTING.md SECURITY.md NOTICE LICENSING.md .gitignore \
+                   docs/integrity/POLICY.md docs/spec/000-requisitos-funcionais.md \
+                   docs/spec/out-of-scope.md docs/provenance/POLICY.md docs/provenance/REGISTER.md; do
+            if [ ! -s "$f" ]; then
+              echo "falta ou está vazio: $f" >&2
+              exit 1
+            fi
+          done
+
+      - name: No LICENSE file until the owner decides
+        run: |
+          set -euo pipefail
+          for f in LICENSE LICENSE.md LICENSE.txt COPYING; do
+            if [ -f "$f" ]; then
+              echo "arquivo de licença presente ($f) antes da decisão do proprietário" >&2
+              exit 1
+            fi
+          done
+
+      - name: No secret-like files are tracked
+        run: |
+          set -euo pipefail
+          bad=$(git ls-files | grep -E '(^|/)(\.env(\..+)?|.+\.(pem|key|ppk|p12|pfx|jks|keystore))$' || true)
+          if [ -n "$bad" ]; then
+            echo "arquivos com nome/formato de segredo rastreados:" >&2
+            printf '%s\n' "$bad" >&2
+            exit 1
+          fi
+
+      - name: Secret-like content scan (tracked and staged)
+        run: |
+          set -euo pipefail
+          hits=0
+          while IFS= read -r -d '' file; do
+            if grep -IEn '(-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})' "$file" > /dev/null 2>&1; then
+              echo "conteúdo com formato de segredo: $file" >&2
+              hits=1
+            fi
+          done < <(git ls-files -z; git diff --cached --name-only --diff-filter=ACMR -z)
+          [ "$hits" -eq 0 ]

@@ -1,0 +1,5 @@
+# Revisão do proprietário
+# Regra única de CODEOWNERS: tudo passa pelo proprietário do projeto.
+# Não existe segunda via de aprovação nesta fase; a proteção do repositório
+# combina CODEOWNERS, verificações de CI obrigatórias e a revisão explícita do proprietário.
+* @vihisantos

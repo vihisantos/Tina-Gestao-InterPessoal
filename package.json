@@ -1,0 +1,28 @@
+{
+  "name": "tina-desktop-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "src-frontend"
+  ],
+  "scripts": {
+    "dev": "tauri dev",
+    "tauri:dev": "tauri dev",
+    "tauri:info": "tauri info",
+    "frontend:dev": "npm run dev --workspace tina-frontend",
+    "frontend:build": "npm run build --workspace tina-frontend",
+    "frontend:check": "npm run check --workspace tina-frontend"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "canvas@3.2.3": true
+  },
+  "dependencies": {
+    "@types/node": "^26.6.6",
+    "canvas": "^3.2.3",
+    "ico": "^0.3.3"
+  }
+}

@@ -82,6 +82,5 @@ $RECYCLE.BIN/
 
 # Scripts de geração de ícones (não versionar)
 src-tauri/icons/create-*.js
-src-tauri/icons/*.ico
 # Diret�rio p�blico da SvelteKit (gerado dinamicamente)
 public/

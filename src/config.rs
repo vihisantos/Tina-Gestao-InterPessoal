@@ -142,11 +142,42 @@ impl Default for AppConfig {
 }
 
 /// Carrega `tina.toml`. Se não existir, grava a configuração padrão.
+/// Faz migração automática se o arquivo existir mas não tiver todos os campos.
 pub fn load_config() -> Result<AppConfig> {
     let config_path = tina_data_dir().join("tina.toml");
 
     if config_path.exists() {
-        load_config_from(&config_path)
+        // Tentar carregar com suporte a campos ausentes (versões antigas)
+        let content = std::fs::read_to_string(&config_path)?;
+        
+        // Primeiro tentar deserializar como mapa para verificar se owner_uuid existe
+        let map: toml::Value = toml::from_str(&content).map_err(|e| crate::error::TinaError::Config(e.to_string()))?;
+        
+        match map {
+            toml::Value::Table(mut table) => {
+                // Verificar se owner_uuid já existe
+                let has_owner_uuid = table.contains_key("owner_uuid");
+                
+                if !has_owner_uuid {
+                    // Migração: adicionar owner_uuid se ausente
+                    let installation_id = table.get("installation_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&Uuid::new_v4().to_string())
+                        .to_string();
+                    
+                    // Gerar owner_uuid único mas relacionado à instalação existente
+                    table.insert("owner_uuid".to_string(), toml::Value::String(Uuid::new_v4().to_string()));
+                    
+                    // Reescrever a configuração migrada
+                    let content = toml::to_string_pretty(&toml::Value::Table(table))?;
+                    std::fs::write(&config_path, content)?;
+                }
+                
+                // Agora carregar normalmente
+                load_config_from(&config_path)
+            }
+            _ => Err(crate::error::TinaError::Config("Invalid config format".to_string()))
+        }
     } else {
         let config = AppConfig::default();
         config.save(&config_path)?;
@@ -178,6 +209,23 @@ impl AppConfig {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::create_dir_all(&self.log_path)?;
+        Ok(())
+    }
+    
+    /// Para testes: cria configuração antiga sem owner_uuid
+    #[cfg(test)]
+    pub fn create_old_config_without_owner_uuid(path: &Path) -> Result<()> {
+        let old_config = r#"
+data_dir = "/old/path"
+database_path = "/old/path/tina.db"
+log_path = "/old/path/logs"
+installation_id = "old-installation-id"
+nvidia = { base_url = "https://test.com", default_model = "test", reasoning_model = "test2", timeout_seconds = 60, max_tokens = 4096, temperature = 0.7 }
+security = { encrypt_at_rest = true, require_master_password = false, session_timeout_seconds = 28800, max_login_attempts = 5, lockout_duration_seconds = 900 }
+features = { mcp_enabled = true, local_embeddings = false, telemetry_enabled = false, beta_features = false }
+"#;
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        std::fs::write(path, old_config)?;
         Ok(())
     }
 }

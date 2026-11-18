@@ -37,13 +37,25 @@ pub struct TinaApp {
 
 impl TinaApp {
     /// Carrega configuração, garante os diretórios locais, abre/cria o SQLite
-    /// e aplica as migrations. Não faz qualquer chamada de rede.
+    /// aplica as migrations e garante que a instalação exista no banco.
     pub async fn initialize() -> Result<Self> {
         let config = Arc::new(config::load_config()?);
         config.ensure_directories()?;
 
         let database = Database::open(&config.database_path).await?;
-
+        
+        // Garantir que a instalação exista no banco (inicialização idempotente)
+        let repo = infra::InstallationRepository::new(database.pool());
+        
+        // Verificar se a instalação do config existe no banco
+        if let Some(existing_installation) = repo.find_by_id(&config.installation_id).await? {
+            // Instalação já existe - tudo certo
+        } else {
+            // Instalação não existe - criar usando o UUID do config como owner
+            let owner_uuid = config.installation_id.clone();
+            let _ = repo.create("Tina", &owner_uuid).await?;
+        }
+        
         Ok(Self { config, database })
     }
 

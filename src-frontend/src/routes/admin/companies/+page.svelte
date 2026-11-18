@@ -34,10 +34,7 @@
     async function createCompany(name: string) {
         try {
             const newCompany = await invoke<CompanyDto>('create_company', {
-                request: {
-                    installation_id: '',
-                    name
-                }
+                name: name
             });
             const current = companies.get();
             companies.set([...current, newCompany]);

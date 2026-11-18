@@ -28,7 +28,6 @@ impl From<tina::core::Company> for CompanyDto {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCompanyRequest {
-    pub installation_id: String,
     pub name: String,
 }
 
@@ -75,7 +74,7 @@ pub async fn get_company(
     Ok(CompanyDto::from(company))
 }
 
-/// Cria uma nova empresa
+/// Cria uma nova empresa (o installation_id é obtido automaticamente do contexto)
 #[tauri::command]
 pub async fn create_company(
     state: State<'_, TinaApp>,
@@ -85,11 +84,9 @@ pub async fn create_company(
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
     
-    if request.installation_id != installation_id {
-        return Err("Empresa não pode pertencer a outra instalação".to_string());
-    }
-    
-    let company = repo.create(&request.installation_id, &request.name).await
+    // O installation_id é obtido automaticamente do contexto confiável
+    // NÃO confiar no frontend para fornecer esse identificador
+    let company = repo.create(&installation_id, &request.name).await
         .map_err(|e| e.to_string())?;
     
     Ok(CompanyDto::from(company))

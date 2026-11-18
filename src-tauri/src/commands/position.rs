@@ -100,21 +100,14 @@ pub async fn get_position(
 ) -> Result<PositionDto, String> {
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
+    let dept_repo = DepartmentRepository::new(db.pool());
+    let company_repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
     
     let pos = pos_repo.find_by_id(&position_id).await
         .map_err(|e| e.to_string())?;
     
-    // Verificar se pertence à instalação (via cadeia)
-    let belongs_to_any_company = pos_repo.belongs_to_company(&position_id, &"".to_string()).await
-        .map_err(|e| e.to_string())?;
-    
-    if !belongs_to_any_company {
-        return Err("Cargo não encontrado".to_string());
-    }
-    
-    // Verificar se alguma empresa da instalação tem este cargo
-    let company_repo = CompanyRepository::new(db.pool());
+    // Verificar se alguma empresa da instalação tem este cargo (via cadeia)
     let companies = company_repo.list_by_installation(&installation_id).await
         .map_err(|e| e.to_string())?
         .into_iter()

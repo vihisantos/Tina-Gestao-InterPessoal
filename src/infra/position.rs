@@ -260,7 +260,10 @@ impl<'a> PositionRepository<'a> {
             }
         }
 
-        Err(TinaError::Other("Position not found or doesn't belong to installation".to_string()).into())
+        Err(
+            TinaError::Other("Position not found or doesn't belong to installation".to_string())
+                .into(),
+        )
     }
 
     /// Atualiza a descrição do cargo (apenas se pertencer à instalação via empresa)
@@ -284,7 +287,10 @@ impl<'a> PositionRepository<'a> {
             }
         }
 
-        Err(TinaError::Other("Position not found or doesn't belong to installation".to_string()).into())
+        Err(
+            TinaError::Other("Position not found or doesn't belong to installation".to_string())
+                .into(),
+        )
     }
 
     /// Arquiva um cargo - apenas se pertencer à instalação via empresa
@@ -302,9 +308,9 @@ impl<'a> PositionRepository<'a> {
             }
         }
 
-        Err(TinaError::Other(
-            "Position not found or doesn't belong to installation".to_string(),
+        Err(
+            TinaError::Other("Position not found or doesn't belong to installation".to_string())
+                .into(),
         )
-        .into())
     }
 }

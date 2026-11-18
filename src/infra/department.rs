@@ -212,7 +212,10 @@ impl<'a> DepartmentRepository<'a> {
             }
         }
 
-        Err(TinaError::Other("Department not found or doesn't belong to installation".to_string()).into())
+        Err(
+            TinaError::Other("Department not found or doesn't belong to installation".to_string())
+                .into(),
+        )
     }
 
     /// Atualiza a descrição do departamento (apenas se pertencer à instalação via empresa)
@@ -236,11 +239,18 @@ impl<'a> DepartmentRepository<'a> {
             }
         }
 
-        Err(TinaError::Other("Department not found or doesn't belong to installation".to_string()).into())
+        Err(
+            TinaError::Other("Department not found or doesn't belong to installation".to_string())
+                .into(),
+        )
     }
 
     /// Arquiva um departamento - apenas se pertencer à instalação via empresa
-    pub async fn archive_with_scope(&self, department_id: &str, installation_id: &str) -> Result<()> {
+    pub async fn archive_with_scope(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+    ) -> Result<()> {
         let company_repo = crate::infra::CompanyRepository::new(self.pool);
         let companies = company_repo.list_by_installation(installation_id).await?;
 
@@ -254,9 +264,9 @@ impl<'a> DepartmentRepository<'a> {
             }
         }
 
-        Err(TinaError::Other(
-            "Department not found or doesn't belong to installation".to_string(),
+        Err(
+            TinaError::Other("Department not found or doesn't belong to installation".to_string())
+                .into(),
         )
-        .into())
     }
 }

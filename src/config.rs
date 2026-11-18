@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub log_path: PathBuf,
     /// ID da instalação atual (do registro de instalações).
     pub installation_id: String,
+    /// UUID do proprietário da instalação (independente do ID da instalação).
+    pub owner_uuid: String,
     /// Configuração do provedor autorizado (NVIDIA NIM).
     pub nvidia: NvidiaConfig,
     /// Políticas de segurança locais.
@@ -125,11 +127,13 @@ impl Default for AppConfig {
     fn default() -> Self {
         let data_dir = tina_data_dir();
         let installation_id = Uuid::new_v4().to_string();
+        let owner_uuid = Uuid::new_v4().to_string();
         Self {
             data_dir: data_dir.clone(),
             database_path: data_dir.join("tina.db"),
             log_path: data_dir.join("logs"),
             installation_id,
+            owner_uuid,
             nvidia: NvidiaConfig::default(),
             security: SecurityConfig::default(),
             features: FeatureFlags::default(),

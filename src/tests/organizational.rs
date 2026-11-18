@@ -275,3 +275,151 @@ async fn test_persistence_after_restart() {
     
     cleanup_test_db(&path);
 }
+
+// ============================================================================
+// NOVOS TESTES PARA FUNDACAO-ORGANIZACIONAL-02
+// ============================================================================
+
+/// Testa inicialização idempotente - criar com ID específico
+#[tokio::test]
+async fn test_installation_create_with_id() {
+    let test_name = "installation_with_id";
+    let (db, path) = setup_test_db(test_name).await;
+    
+    let repo = InstallationRepository::new(db.pool());
+    let installation_id = "test-installation-id-12345";
+    let owner_uuid = "owner-uuid-67890";
+    
+    // Criar instalação com ID específico
+    let installation = repo.create_with_id("Test Installation", installation_id, owner_uuid)
+        .await
+        .expect("Failed to create installation with ID");
+    
+    assert_eq!(installation.id, installation_id);
+    assert_eq!(installation.name, "Test Installation");
+    assert_eq!(installation.owner_uuid, owner_uuid);
+    
+    // Verificar que pode ser encontrada pelo ID
+    let found = repo.find_by_id(installation_id).await
+        .expect("Failed to find installation")
+        .expect("Installation not found");
+    
+    assert_eq!(found.id, installation_id);
+    assert_eq!(found.owner_uuid, owner_uuid);
+    
+    cleanup_test_db(&path);
+}
+
+/// Testa que a mesma instalação não é criada duas vezes
+#[tokio::test]
+async fn test_installation_idempotent() {
+    let test_name = "installation_idempotent";
+    let (db, path) = setup_test_db(test_name).await;
+    
+    let repo = InstallationRepository::new(db.pool());
+    let installation_id = "persistent-installation-id";
+    let owner_uuid = "persistent-owner-uuid";
+    
+    // Criar instalação pela primeira vez
+    let installation1 = repo.create_with_id("Test Installation", installation_id, owner_uuid)
+        .await
+        .expect("Failed to create installation");
+    
+    // Tentar buscar/criar novamente - deve encontrar a existente
+    let found = repo.find_by_id(installation_id).await
+        .expect("Failed to find installation")
+        .expect("Installation should exist");
+    
+    assert_eq!(found.id, installation_id);
+    assert_eq!(found.owner_uuid, owner_uuid);
+    
+    // Verificar que não há duplicatas
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM installations WHERE id = ?"
+    )
+    .bind(installation_id)
+    .fetch_one(db.pool())
+    .await
+    .expect("Failed to count installations");
+    
+    assert_eq!(count, 1, "Should have exactly one installation record");
+    
+    cleanup_test_db(&path);
+}
+
+/// Testa isolamento entre múltiplas instalações
+#[tokio::test]
+async fn test_isolation_between_installations() {
+    let test_name = "multi_installation";
+    let (db, path) = setup_test_db(test_name).await;
+    
+    let repo = InstallationRepository::new(db.pool());
+    
+    // Criar duas instalações com IDs únicos
+    let inst1_id = "installation-1-uuid";
+    let inst2_id = "installation-2-uuid";
+    let owner1 = "owner-1-uuid";
+    let owner2 = "owner-2-uuid";
+    
+    let inst1 = repo.create_with_id("Installation 1", inst1_id, owner1)
+        .await.expect("Failed to create inst 1");
+    let inst2 = repo.create_with_id("Installation 2", inst2_id, owner2)
+        .await.expect("Failed to create inst 2");
+    
+    let company_repo = CompanyRepository::new(db.pool());
+    
+    // Criar empresas em cada instalação
+    let company1 = company_repo.create(&inst1.id, "Empresa 1").await.expect("Failed to create company 1");
+    let company2 = company_repo.create(&inst2.id, "Empresa 2").await.expect("Failed to create company 2");
+    
+    // Listar empresas de inst1 - só deve ter empresa1
+    let companies1 = company_repo.list_by_installation(&inst1.id).await.expect("Failed");
+    assert_eq!(companies1.len(), 1);
+    assert_eq!(companies1[0].id, company1.id);
+    
+    // Listar empresas de inst2 - só deve ter empresa2
+    let companies2 = company_repo.list_by_installation(&inst2.id).await.expect("Failed");
+    assert_eq!(companies2.len(), 1);
+    assert_eq!(companies2[0].id, company2.id);
+    
+    // Verificar belongs_to_installation
+    assert!(company_repo.belongs_to_installation(&company1.id, &inst1.id).await.expect("Failed"));
+    assert!(!company_repo.belongs_to_installation(&company1.id, &inst2.id).await.expect("Failed"));
+    assert!(company_repo.belongs_to_installation(&company2.id, &inst2.id).await.expect("Failed"));
+    assert!(!company_repo.belongs_to_installation(&company2.id, &inst1.id).await.expect("Failed"));
+    
+    cleanup_test_db(&path);
+}
+
+/// Testa que owner_uuid é independente do installation_id
+#[tokio::test]
+async fn test_owner_uuid_independent() {
+    let test_name = "owner_uuid_independent";
+    let (db, path) = setup_test_db(test_name).await;
+    
+    let repo = InstallationRepository::new(db.pool());
+    
+    // Criar instalação com IDs diferentes
+    let installation_id = "inst-id-different";
+    let owner_uuid = "owner-uuid-different";
+    
+    let installation = repo.create_with_id("Test", installation_id, owner_uuid)
+        .await
+        .expect("Failed to create installation");
+    
+    // Verificar que os IDs são diferentes mas ambos são válidos
+    assert_ne!(installation.id, installation.owner_uuid);
+    assert_eq!(installation.id, installation_id);
+    assert_eq!(installation.owner_uuid, owner_uuid);
+    
+    // Pode buscar pelo ID da instalação
+    let found_by_id = repo.find_by_id(&installation_id).await.expect("Failed").expect("Not found");
+    assert_eq!(found_by_id.id, installation_id);
+    
+    // Pode buscar pelo owner_uuid
+    let found_by_owner = repo.find_by_owner_uuid(&owner_uuid).await.expect("Failed").expect("Not found");
+    assert_eq!(found_by_owner.owner_uuid, owner_uuid);
+    assert_eq!(found_by_owner.id, installation_id);
+    
+    cleanup_test_db(&path);
+}

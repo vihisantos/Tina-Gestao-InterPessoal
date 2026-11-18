@@ -32,15 +32,20 @@ impl<'a> InstallationRepository<'a> {
     pub async fn create(&self, name: &str, owner_uuid: &str) -> Result<Installation> {
         let id = Uuid::new_v4().to_string();
         
+        self.create_with_id(name, &id, owner_uuid).await
+    }
+
+    /// Cria uma instalação com ID específico (para inicialização idempotente)
+    pub async fn create_with_id(&self, name: &str, id: &str, owner_uuid: &str) -> Result<Installation> {
         sqlx::query(
             r#"
             INSERT INTO installations (id, name, root_path, version, owner_uuid, created_at)
             VALUES (?, ?, ?, ?, ?, datetime('now'))
             "#
         )
-        .bind(&id)
+        .bind(id)
         .bind(name)
-        .bind(".")
+        .bind(id)  // Use the ID as root_path to avoid conflicts when creating multiple installations in tests
         .bind(env!("CARGO_PKG_VERSION"))
         .bind(owner_uuid)
         .execute(self.pool)
@@ -49,7 +54,7 @@ impl<'a> InstallationRepository<'a> {
         let row: InstallationRow = sqlx::query_as(
             "SELECT id, name, root_path, version, owner_uuid, created_at FROM installations WHERE id = ?"
         )
-        .bind(&id)
+        .bind(id)
         .fetch_one(self.pool)
         .await?;
 

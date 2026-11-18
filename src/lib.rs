@@ -48,12 +48,13 @@ impl TinaApp {
         let repo = infra::InstallationRepository::new(database.pool());
         
         // Verificar se a instalação do config existe no banco
-        if let Some(existing_installation) = repo.find_by_id(&config.installation_id).await? {
+        // O ID da instalação é o principal-chave (identificador da instalação como um todo)
+        // O owner_uuid é o ID do proprietário que criou a instalação
+        if let Some(_existing_installation) = repo.find_by_id(&config.installation_id).await? {
             // Instalação já existe - tudo certo
         } else {
-            // Instalação não existe - criar usando o UUID do config como owner
-            let owner_uuid = config.installation_id.clone();
-            let _ = repo.create("Tina", &owner_uuid).await?;
+            // Instalação não existe - criar com o ID da configuração
+            let _ = repo.create_with_id("Tina", &config.installation_id, &config.owner_uuid).await?;
         }
         
         Ok(Self { config, database })

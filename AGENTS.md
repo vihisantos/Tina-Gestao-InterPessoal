@@ -4,6 +4,9 @@ Este arquivo é a fonte canônica sobre **quem é a Tina** e **como a identidade
 do aplicativo deve ser tratada**. Leia antes de alterar UI, ícones, assets ou textos
 de apresentação.
 
+> Guia completo — personagem, uso do logo, paleta, tipografia, espaçamento,
+> componentes e acessibilidade: **[docs/design/BRAND-GUIDE.md](docs/design/BRAND-GUIDE.md)**.
+
 ---
 
 ## 1. A Tina é um personagem — e o personagem é o produto
@@ -118,3 +121,6 @@ Antes de concluir qualquer mudança de interface, rode `npm run frontend:check` 
 - [ ] `Card`/`Badge`/`Button`/`Logo` reutilizados.
 - [ ] `icon.ico` presente em `src-tauri/icons/`.
 - [ ] `npm run frontend:check` e `npm run frontend:build` verdes.
+
+Em dúvida sobre qualquer detalhe visual, consulte
+[docs/design/BRAND-GUIDE.md](docs/design/BRAND-GUIDE.md) antes de improvisar.

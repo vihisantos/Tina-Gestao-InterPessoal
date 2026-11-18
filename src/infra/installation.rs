@@ -31,21 +31,26 @@ impl<'a> InstallationRepository<'a> {
     /// Cria uma nova instalação
     pub async fn create(&self, name: &str, owner_uuid: &str) -> Result<Installation> {
         let id = Uuid::new_v4().to_string();
-        
+
         self.create_with_id(name, &id, owner_uuid).await
     }
 
     /// Cria uma instalação com ID específico (para inicialização idempotente)
-    pub async fn create_with_id(&self, name: &str, id: &str, owner_uuid: &str) -> Result<Installation> {
+    pub async fn create_with_id(
+        &self,
+        name: &str,
+        id: &str,
+        owner_uuid: &str,
+    ) -> Result<Installation> {
         sqlx::query(
             r#"
             INSERT INTO installations (id, name, root_path, version, owner_uuid, created_at)
             VALUES (?, ?, ?, ?, ?, datetime('now'))
-            "#
+            "#,
         )
         .bind(id)
         .bind(name)
-        .bind(id)  // Use the ID as root_path to avoid conflicts when creating multiple installations in tests
+        .bind(id) // Use the ID as root_path to avoid conflicts when creating multiple installations in tests
         .bind(env!("CARGO_PKG_VERSION"))
         .bind(owner_uuid)
         .execute(self.pool)
@@ -76,7 +81,7 @@ impl<'a> InstallationRepository<'a> {
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|row| Installation {
             id: row.id,
             name: row.name,
@@ -95,7 +100,7 @@ impl<'a> InstallationRepository<'a> {
         .bind(owner_uuid)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|row| Installation {
             id: row.id,
             name: row.name,
@@ -128,7 +133,7 @@ impl<'a> InstallationRepository<'a> {
     /// Lista empresas por instalação (para validação de isolamento)
     pub async fn list_companies(&self, installation_id: &str) -> Result<Vec<crate::core::Company>> {
         use crate::core::company::{Company, CompanyStatus};
-        
+
         #[derive(sqlx::FromRow, Debug)]
         struct CompanyRow {
             id: String,
@@ -137,7 +142,7 @@ impl<'a> InstallationRepository<'a> {
             status: String,
             created_at: String,
         }
-        
+
         impl From<CompanyRow> for Company {
             fn from(row: CompanyRow) -> Self {
                 let status = match row.status.as_str() {
@@ -146,7 +151,7 @@ impl<'a> InstallationRepository<'a> {
                     "suspended" => CompanyStatus::Suspended,
                     _ => CompanyStatus::Inactive,
                 };
-                
+
                 Self {
                     id: row.id,
                     installation_id: row.installation_id,
@@ -156,14 +161,14 @@ impl<'a> InstallationRepository<'a> {
                 }
             }
         }
-        
+
         let rows: Vec<CompanyRow> = sqlx::query_as(
             "SELECT id, installation_id, name, status, created_at FROM companies WHERE installation_id = ? AND status = 'active' ORDER BY name"
         )
         .bind(installation_id)
         .fetch_all(self.pool)
         .await?;
-        
+
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 }

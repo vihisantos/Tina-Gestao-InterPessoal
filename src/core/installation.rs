@@ -19,7 +19,14 @@ pub struct Installation {
 
 impl Installation {
     /// Cria uma nova instalação com os dados fornecidos
-    pub fn new(id: String, name: String, root_path: String, version: String, owner_uuid: String, created_at: String) -> Self {
+    pub fn new(
+        id: String,
+        name: String,
+        root_path: String,
+        version: String,
+        owner_uuid: String,
+        created_at: String,
+    ) -> Self {
         Self {
             id,
             name,

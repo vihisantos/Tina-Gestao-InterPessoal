@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::TinaApp;
 use tina::infra::{CompanyRepository, InstallationRepository};
+use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CompanyDto {
@@ -46,10 +46,12 @@ pub async fn list_companies(state: State<'_, TinaApp>) -> Result<Vec<CompanyDto>
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
-    let companies = repo.list_by_installation(&installation_id).await
+
+    let companies = repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(companies.into_iter().map(CompanyDto::from).collect())
 }
 
@@ -62,15 +64,20 @@ pub async fn get_company(
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
-    let company = repo.find_by_id(&company_id).await
+
+    let company = repo
+        .find_by_id(&company_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
-    if !repo.belongs_to_installation(&company.id, &installation_id).await
-        .map_err(|e| e.to_string())? {
+
+    if !repo
+        .belongs_to_installation(&company.id, &installation_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
         return Err("Empresa não pertence à instalação atual".to_string());
     }
-    
+
     Ok(CompanyDto::from(company))
 }
 
@@ -83,12 +90,14 @@ pub async fn create_company(
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // O installation_id é obtido automaticamente do contexto confiável
     // NÃO confiar no frontend para fornecer esse identificador
-    let company = repo.create(&installation_id, &request.name).await
+    let company = repo
+        .create(&installation_id, &request.name)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(CompanyDto::from(company))
 }
 
@@ -102,43 +111,51 @@ pub async fn update_company(
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar pertencimento à instalação
-    if !repo.belongs_to_installation(&company_id, &installation_id).await
-        .map_err(|e| e.to_string())? {
+    if !repo
+        .belongs_to_installation(&company_id, &installation_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
         return Err("Empresa não pertence à instalação atual".to_string());
     }
-    
-    repo.update_name(&company_id, &request.name).await
+
+    repo.update_name(&company_id, &request.name)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(())
 }
 
 /// Archiva uma empresa (não pode ter departamentos ativos)
 #[tauri::command]
-pub async fn archive_company(
-    state: State<'_, TinaApp>,
-    company_id: String,
-) -> Result<(), String> {
+pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> Result<(), String> {
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar pertencimento à instalação
-    if !repo.belongs_to_installation(&company_id, &installation_id).await
-        .map_err(|e| e.to_string())? {
+    if !repo
+        .belongs_to_installation(&company_id, &installation_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
         return Err("Empresa não pertence à instalação atual".to_string());
     }
-    
+
     // Verificar se pode ser arquivada
-    if !repo.can_archive(&company_id).await
-        .map_err(|e| e.to_string())? {
-        return Err("Empresa não pode ser arquivada: ainda possui departamentos ativos".to_string());
+    if !repo
+        .can_archive(&company_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(
+            "Empresa não pode ser arquivada: ainda possui departamentos ativos".to_string(),
+        );
     }
-    
-    repo.archive(&company_id).await
-        .map_err(|e| e.to_string())?;
-    
+
+    repo.archive(&company_id).await.map_err(|e| e.to_string())?;
+
     Ok(())
 }

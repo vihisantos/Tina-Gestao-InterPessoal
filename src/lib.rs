@@ -14,16 +14,16 @@ use crate::config::AppConfig;
 use crate::error::Result;
 
 pub mod config;
-pub mod error;
 pub mod core;
+pub mod error;
 
 pub mod infra;
 
 #[cfg(test)]
 mod tests;
 
-pub use infra::Database;
 pub use error::{Result as TinaResult, TinaError};
+pub use infra::Database;
 
 /// Versão da plataforma, obtida do manifesto Cargo.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -43,10 +43,10 @@ impl TinaApp {
         config.ensure_directories()?;
 
         let database = Database::open(&config.database_path).await?;
-        
+
         // Garantir que a instalação exista no banco (inicialização idempotente)
         let repo = infra::InstallationRepository::new(database.pool());
-        
+
         // Verificar se a instalação do config existe no banco
         // O ID da instalação é o principal-chave (identificador da instalação como um todo)
         // O owner_uuid é o ID do proprietário que criou a instalação
@@ -54,9 +54,11 @@ impl TinaApp {
             // Instalação já existe - tudo certo
         } else {
             // Instalação não existe - criar com o ID da configuração
-            let _ = repo.create_with_id("Tina", &config.installation_id, &config.owner_uuid).await?;
+            let _ = repo
+                .create_with_id("Tina", &config.installation_id, &config.owner_uuid)
+                .await?;
         }
-        
+
         Ok(Self { config, database })
     }
 

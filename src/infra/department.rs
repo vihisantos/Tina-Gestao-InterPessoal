@@ -26,7 +26,7 @@ impl From<DepartmentRow> for Department {
             "suspended" => DepartmentStatus::Suspended,
             _ => DepartmentStatus::Inactive,
         };
-        
+
         Self {
             id: row.id,
             company_id: row.company_id,
@@ -51,7 +51,7 @@ impl<'a> DepartmentRepository<'a> {
     }
 
     /// Cria um novo departamento
-    /// 
+    ///
     /// # Argumentos
     /// * `company_id` - ID da empresa (validado pelo caller)
     /// * `code` - Código único do departamento
@@ -65,12 +65,12 @@ impl<'a> DepartmentRepository<'a> {
         description: Option<&str>,
     ) -> Result<Department> {
         let id = Uuid::new_v4().to_string();
-        
+
         sqlx::query(
             r#"
             INSERT INTO departments (id, company_id, code, name, description, status, created_at)
             VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
-            "#
+            "#,
         )
         .bind(&id)
         .bind(company_id)
@@ -91,7 +91,7 @@ impl<'a> DepartmentRepository<'a> {
         .bind(id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(row.into())
     }
 
@@ -103,7 +103,7 @@ impl<'a> DepartmentRepository<'a> {
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|r| r.into()))
     }
 
@@ -115,7 +115,7 @@ impl<'a> DepartmentRepository<'a> {
         .bind(company_id)
         .fetch_all(self.pool)
         .await?;
-        
+
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 
@@ -128,69 +128,65 @@ impl<'a> DepartmentRepository<'a> {
         .bind(company_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count > 0)
     }
 
     /// Verifica se departamento existe
     pub async fn exists(&self, department_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM departments WHERE id = ?"
-        )
-        .bind(department_id)
-        .fetch_one(self.pool)
-        .await?;
-        
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM departments WHERE id = ?")
+            .bind(department_id)
+            .fetch_one(self.pool)
+            .await?;
+
         Ok(count > 0)
     }
 
     /// Atualiza o nome do departamento
     pub async fn update_name(&self, department_id: &str, new_name: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE departments SET name = ? WHERE id = ?"
-        )
-        .bind(new_name)
-        .bind(department_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE departments SET name = ? WHERE id = ?")
+            .bind(new_name)
+            .bind(department_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Atualiza a descrição do departamento
-    pub async fn update_description(&self, department_id: &str, new_description: Option<&str>) -> Result<()> {
-        sqlx::query(
-            "UPDATE departments SET description = ? WHERE id = ?"
-        )
-        .bind(new_description)
-        .bind(department_id)
-        .execute(self.pool)
-        .await?;
-        
+    pub async fn update_description(
+        &self,
+        department_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query("UPDATE departments SET description = ? WHERE id = ?")
+            .bind(new_description)
+            .bind(department_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Arquiva um departamento
     pub async fn archive(&self, department_id: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE departments SET status = 'inactive' WHERE id = ?"
-        )
-        .bind(department_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE departments SET status = 'inactive' WHERE id = ?")
+            .bind(department_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Verifica se departamento pode ser arquivado (sem cargos ativos)
     pub async fn can_archive(&self, department_id: &str) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM positions WHERE department_id = ? AND status = 'active'"
+            "SELECT COUNT(*) FROM positions WHERE department_id = ? AND status = 'active'",
         )
         .bind(department_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count == 0)
     }
 }

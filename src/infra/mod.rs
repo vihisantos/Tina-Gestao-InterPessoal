@@ -1,17 +1,17 @@
 //! Infrastructure - database, telemetry, etc.
 
+mod company;
 mod db;
+mod department;
+mod installation;
+mod position;
 mod redis;
 mod telemetry;
-mod installation;
-mod company;
-mod department;
-mod position;
 
+pub use company::*;
 pub use db::*;
+pub use department::*;
+pub use installation::*;
+pub use position::*;
 pub use redis::*;
 pub use telemetry::*;
-pub use installation::*;
-pub use company::*;
-pub use department::*;
-pub use position::*;

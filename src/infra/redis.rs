@@ -8,6 +8,7 @@ pub struct RedisClient {
 }
 
 impl RedisClient {
+    /// Creates a new Redis client (placeholder).
     pub fn new(_config: &crate::error::Result<()>) -> Self {
         Self {}
     }

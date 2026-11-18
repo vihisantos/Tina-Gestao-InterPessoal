@@ -24,7 +24,7 @@ impl From<CompanyRow> for Company {
             "suspended" => CompanyStatus::Suspended,
             _ => CompanyStatus::Inactive,
         };
-        
+
         Self {
             id: row.id,
             installation_id: row.installation_id,
@@ -47,21 +47,21 @@ impl<'a> CompanyRepository<'a> {
     }
 
     /// Cria uma nova empresa
-    /// 
+    ///
     /// # Argumentos
     /// * `installation_id` - ID da instalação (validado pelo caller)
     /// * `name` - Nome da empresa
-    /// 
+    ///
     /// # Retorno
     /// A empresa criada com ID gerado automaticamente
     pub async fn create(&self, installation_id: &str, name: &str) -> Result<Company> {
         let id = Uuid::new_v4().to_string();
-        
+
         sqlx::query(
             r#"
             INSERT INTO companies (id, installation_id, name, status, created_at)
             VALUES (?, ?, ?, 'active', datetime('now'))
-            "#
+            "#,
         )
         .bind(&id)
         .bind(installation_id)
@@ -75,29 +75,29 @@ impl<'a> CompanyRepository<'a> {
     /// Busca empresa pelo ID
     pub async fn find_by_id(&self, id: &str) -> Result<Company> {
         let row: CompanyRow = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?"
+            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(row.into())
     }
 
     /// Busca empresa pelo ID (opcional)
     pub async fn find_by_id_optional(&self, id: &str) -> Result<Option<Company>> {
         let row: Option<CompanyRow> = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?"
+            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|r| r.into()))
     }
 
     /// Lista todas as empresas de uma instalação
-    /// 
+    ///
     /// # Argumentos
     /// * `installation_id` - ID da instalação
     pub async fn list_by_installation(&self, installation_id: &str) -> Result<Vec<Company>> {
@@ -107,12 +107,16 @@ impl<'a> CompanyRepository<'a> {
         .bind(installation_id)
         .fetch_all(self.pool)
         .await?;
-        
+
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 
     /// Verifica se empresa pertence à instalação
-    pub async fn belongs_to_installation(&self, company_id: &str, installation_id: &str) -> Result<bool> {
+    pub async fn belongs_to_installation(
+        &self,
+        company_id: &str,
+        installation_id: &str,
+    ) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM companies WHERE id = ? AND installation_id = ? AND status = 'active'"
         )
@@ -120,56 +124,50 @@ impl<'a> CompanyRepository<'a> {
         .bind(installation_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count > 0)
     }
 
     /// Atualiza o nome da empresa
     pub async fn update_name(&self, company_id: &str, new_name: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE companies SET name = ? WHERE id = ?"
-        )
-        .bind(new_name)
-        .bind(company_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE companies SET name = ? WHERE id = ?")
+            .bind(new_name)
+            .bind(company_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Arquiva uma empresa (não exclui fisicamente)
     pub async fn archive(&self, company_id: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE companies SET status = 'inactive' WHERE id = ?"
-        )
-        .bind(company_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE companies SET status = 'inactive' WHERE id = ?")
+            .bind(company_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Verifica se empresa existe
     pub async fn exists(&self, company_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM companies WHERE id = ?"
-        )
-        .bind(company_id)
-        .fetch_one(self.pool)
-        .await?;
-        
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_one(self.pool)
+            .await?;
+
         Ok(count > 0)
     }
 
     /// Verifica se empresa pode ser arquivada (sem departamentos ativos)
     pub async fn can_archive(&self, company_id: &str) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM departments WHERE company_id = ? AND status = 'active'"
+            "SELECT COUNT(*) FROM departments WHERE company_id = ? AND status = 'active'",
         )
         .bind(company_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count == 0)
     }
 }

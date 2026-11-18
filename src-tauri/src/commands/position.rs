@@ -2,8 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tina::infra::{
+    CompanyRepository, DepartmentRepository, InstallationRepository, PositionRepository,
+};
 use tina::TinaApp;
-use tina::infra::{PositionRepository, DepartmentRepository, CompanyRepository, InstallationRepository};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct PositionDto {
@@ -61,34 +63,43 @@ pub async fn list_positions(
     let pos_repo = PositionRepository::new(db.pool());
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar se o departamento pertence à instalação (via cadeia)
-    let dept = dept_repo.find_by_id(&department_id).await
+    let dept = dept_repo
+        .find_by_id(&department_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     let company_repo = CompanyRepository::new(db.pool());
-    let companies = company_repo.list_by_installation(&installation_id).await
+    let companies = company_repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| c.id)
         .collect::<Vec<_>>();
-    
+
     let mut found = false;
     for company_id in companies {
-        if dept_repo.belongs_to_company(&department_id, &company_id).await
-            .map_err(|e| e.to_string())? {
+        if dept_repo
+            .belongs_to_company(&department_id, &company_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
             found = true;
             break;
         }
     }
-    
+
     if !found {
         return Err("Departamento não pertence à instalação atual".to_string());
     }
-    
-    let positions = pos_repo.list_by_department(&department_id).await
+
+    let positions = pos_repo
+        .list_by_department(&department_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(positions.into_iter().map(PositionDto::from).collect())
 }
 
@@ -103,30 +114,37 @@ pub async fn get_position(
     let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
-    let pos = pos_repo.find_by_id(&position_id).await
+
+    let pos = pos_repo
+        .find_by_id(&position_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     // Verificar se alguma empresa da instalação tem este cargo (via cadeia)
-    let companies = company_repo.list_by_installation(&installation_id).await
+    let companies = company_repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| c.id)
         .collect::<Vec<_>>();
-    
+
     let mut found = false;
     for company_id in companies {
-        if pos_repo.belongs_to_company(&position_id, &company_id).await
-            .map_err(|e| e.to_string())? {
+        if pos_repo
+            .belongs_to_company(&position_id, &company_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
             found = true;
             break;
         }
     }
-    
+
     if !found {
         return Err("Cargo não pertence à instalação atual".to_string());
     }
-    
+
     Ok(PositionDto::from(pos))
 }
 
@@ -140,40 +158,49 @@ pub async fn create_position(
     let pos_repo = PositionRepository::new(db.pool());
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar se o departamento pertence à instalação (via cadeia)
-    let dept = dept_repo.find_by_id(&request.department_id).await
+    let dept = dept_repo
+        .find_by_id(&request.department_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     let company_repo = CompanyRepository::new(db.pool());
-    let companies = company_repo.list_by_installation(&installation_id).await
+    let companies = company_repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| c.id)
         .collect::<Vec<_>>();
-    
+
     let mut found = false;
     for company_id in companies {
-        if dept_repo.belongs_to_company(&request.department_id, &company_id).await
-            .map_err(|e| e.to_string())? {
+        if dept_repo
+            .belongs_to_company(&request.department_id, &company_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
             found = true;
             break;
         }
     }
-    
+
     if !found {
         return Err("Departamento não pertence à instalação atual".to_string());
     }
-    
-    let position = pos_repo.create(
-        &request.department_id,
-        &request.name,
-        request.level,
-        request.authority_level,
-        request.description.as_deref(),
-    ).await
-    .map_err(|e| e.to_string())?;
-    
+
+    let position = pos_repo
+        .create(
+            &request.department_id,
+            &request.name,
+            request.level,
+            request.authority_level,
+            request.description.as_deref(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(PositionDto::from(position))
 }
 
@@ -187,39 +214,50 @@ pub async fn update_position(
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar pertencimento à instalação
-    let pos = pos_repo.find_by_id(&position_id).await
+    let pos = pos_repo
+        .find_by_id(&position_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
-    
-    let companies = company_repo.list_by_installation(&installation_id).await
+
+    let companies = company_repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| c.id)
         .collect::<Vec<_>>();
-    
+
     let mut found = false;
     for company_id in companies {
-        if dept_repo.belongs_to_company(&pos.department_id, &company_id).await
-            .map_err(|e| e.to_string())? {
+        if dept_repo
+            .belongs_to_company(&pos.department_id, &company_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
             found = true;
             break;
         }
     }
-    
+
     if !found {
         return Err("Cargo não pertence à instalação atual".to_string());
     }
-    
-    pos_repo.update_name(&position_id, &request.name).await
+
+    pos_repo
+        .update_name(&position_id, &request.name)
+        .await
         .map_err(|e| e.to_string())?;
-    
-    pos_repo.update_description(&position_id, request.description.as_deref()).await
+
+    pos_repo
+        .update_description(&position_id, request.description.as_deref())
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(())
 }
 
@@ -232,41 +270,53 @@ pub async fn archive_position(
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-    
+
     // Verificar pertencimento à instalação
-    let pos = pos_repo.find_by_id(&position_id).await
+    let pos = pos_repo
+        .find_by_id(&position_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
-    
-    let companies = company_repo.list_by_installation(&installation_id).await
+
+    let companies = company_repo
+        .list_by_installation(&installation_id)
+        .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|c| c.id)
         .collect::<Vec<_>>();
-    
+
     let mut found = false;
     for company_id in companies {
-        if dept_repo.belongs_to_company(&pos.department_id, &company_id).await
-            .map_err(|e| e.to_string())? {
+        if dept_repo
+            .belongs_to_company(&pos.department_id, &company_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
             found = true;
             break;
         }
     }
-    
+
     if !found {
         return Err("Cargo não pertence à instalação atual".to_string());
     }
-    
+
     // Verificar se pode ser arquivado
-    if !pos_repo.can_archive(&position_id).await
-        .map_err(|e| e.to_string())? {
+    if !pos_repo
+        .can_archive(&position_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
         return Err("Cargo não pode ser arquivado: ainda possui funcionários ativos".to_string());
     }
-    
-    pos_repo.archive(&position_id).await
+
+    pos_repo
+        .archive(&position_id)
+        .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(())
 }

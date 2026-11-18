@@ -54,7 +54,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            bootstrap, ping,
+            bootstrap,
+            ping,
             commands::list_companies,
             commands::get_company,
             commands::create_company,

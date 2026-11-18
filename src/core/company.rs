@@ -39,7 +39,13 @@ pub struct Company {
 
 impl Company {
     /// Cria uma nova empresa
-    pub fn new(id: String, installation_id: String, name: String, status: CompanyStatus, created_at: String) -> Self {
+    pub fn new(
+        id: String,
+        installation_id: String,
+        name: String,
+        status: CompanyStatus,
+        created_at: String,
+    ) -> Self {
         Self {
             id,
             installation_id,

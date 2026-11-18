@@ -27,7 +27,7 @@ impl From<PositionRow> for Position {
             "suspended" => PositionStatus::Suspended,
             _ => PositionStatus::Inactive,
         };
-        
+
         Self {
             id: row.id,
             department_id: row.department_id,
@@ -53,7 +53,7 @@ impl<'a> PositionRepository<'a> {
     }
 
     /// Cria um novo cargo
-    /// 
+    ///
     /// # Argumentos
     /// * `department_id` - ID do departamento (validado pelo caller)
     /// * `name` - Nome do cargo
@@ -69,7 +69,7 @@ impl<'a> PositionRepository<'a> {
         description: Option<&str>,
     ) -> Result<Position> {
         let id = Uuid::new_v4().to_string();
-        
+
         sqlx::query(
             r#"
             INSERT INTO positions (id, department_id, name, level, authority_level, description, status, created_at)
@@ -96,7 +96,7 @@ impl<'a> PositionRepository<'a> {
         .bind(id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(row.into())
     }
 
@@ -108,7 +108,7 @@ impl<'a> PositionRepository<'a> {
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|r| r.into()))
     }
 
@@ -120,12 +120,16 @@ impl<'a> PositionRepository<'a> {
         .bind(department_id)
         .fetch_all(self.pool)
         .await?;
-        
+
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 
     /// Verifica se cargo pertence ao departamento
-    pub async fn belongs_to_department(&self, position_id: &str, department_id: &str) -> Result<bool> {
+    pub async fn belongs_to_department(
+        &self,
+        position_id: &str,
+        department_id: &str,
+    ) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM positions WHERE id = ? AND department_id = ? AND status = 'active'"
         )
@@ -133,7 +137,7 @@ impl<'a> PositionRepository<'a> {
         .bind(department_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count > 0)
     }
 
@@ -145,83 +149,79 @@ impl<'a> PositionRepository<'a> {
             FROM positions p
             JOIN departments d ON p.department_id = d.id
             WHERE p.id = ? AND d.company_id = ? AND p.status = 'active'
-            "#
+            "#,
         )
         .bind(position_id)
         .bind(company_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(exists)
     }
 
     /// Verifica se cargo existe
     pub async fn exists(&self, position_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM positions WHERE id = ?"
-        )
-        .bind(position_id)
-        .fetch_one(self.pool)
-        .await?;
-        
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM positions WHERE id = ?")
+            .bind(position_id)
+            .fetch_one(self.pool)
+            .await?;
+
         Ok(count > 0)
     }
 
     /// Atualiza o nome do cargo
     pub async fn update_name(&self, position_id: &str, new_name: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE positions SET name = ? WHERE id = ?"
-        )
-        .bind(new_name)
-        .bind(position_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE positions SET name = ? WHERE id = ?")
+            .bind(new_name)
+            .bind(position_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Atualiza a descrição do cargo
-    pub async fn update_description(&self, position_id: &str, new_description: Option<&str>) -> Result<()> {
-        sqlx::query(
-            "UPDATE positions SET description = ? WHERE id = ?"
-        )
-        .bind(new_description)
-        .bind(position_id)
-        .execute(self.pool)
-        .await?;
-        
+    pub async fn update_description(
+        &self,
+        position_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query("UPDATE positions SET description = ? WHERE id = ?")
+            .bind(new_description)
+            .bind(position_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Arquiva um cargo
     pub async fn archive(&self, position_id: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE positions SET status = 'inactive' WHERE id = ?"
-        )
-        .bind(position_id)
-        .execute(self.pool)
-        .await?;
-        
+        sqlx::query("UPDATE positions SET status = 'inactive' WHERE id = ?")
+            .bind(position_id)
+            .execute(self.pool)
+            .await?;
+
         Ok(())
     }
 
     /// Verifica se cargo pode ser arquivado (sem funcionários ativos)
     pub async fn can_archive(&self, position_id: &str) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM employees WHERE position_id = ? AND is_active = 1"
+            "SELECT COUNT(*) FROM employees WHERE position_id = ? AND is_active = 1",
         )
         .bind(position_id)
         .fetch_one(self.pool)
         .await?;
-        
+
         Ok(count == 0)
     }
 
     /// Busca cargo com cadeia de pertencimento (departamento → empresa)
     pub async fn find_with_company_validation(
-        &self, 
-        position_id: &str, 
-        company_id: &str
+        &self,
+        position_id: &str,
+        company_id: &str,
     ) -> Result<Option<Position>> {
         let row: Option<PositionRow> = sqlx::query_as(
             r#"
@@ -235,7 +235,7 @@ impl<'a> PositionRepository<'a> {
         .bind(company_id)
         .fetch_optional(self.pool)
         .await?;
-        
+
         Ok(row.map(|r| r.into()))
     }
 }

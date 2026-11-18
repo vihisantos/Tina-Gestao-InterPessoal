@@ -26,6 +26,12 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirs = "6"
 thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["clock", "std"] }
+env_logger = "0.11"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 
 [profile.release]
 opt-level = "z"

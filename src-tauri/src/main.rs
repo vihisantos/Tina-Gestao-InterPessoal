@@ -4,6 +4,8 @@
 //! Não existe servidor HTTP/WebSocket: a comunicação usa comandos e eventos
 //! nativos do Tauri.
 
+mod commands;
+
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 use tina::TinaApp;
@@ -16,6 +18,7 @@ struct BootstrapInfo {
     database_path: String,
     database_ready: bool,
     message: String,
+    installation_id: String,
 }
 
 /// Retorna o estado real da instalação Tina.
@@ -26,6 +29,7 @@ fn bootstrap(app: State<'_, TinaApp>) -> Result<BootstrapInfo, String> {
         database_path: app.config().database_path.to_string_lossy().into_owned(),
         database_ready: true,
         message: "Tina inicializada localmente".to_string(),
+        installation_id: app.config().installation_id.clone(),
     })
 }
 
@@ -49,7 +53,24 @@ fn main() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![bootstrap, ping])
+        .invoke_handler(tauri::generate_handler![
+            bootstrap, ping,
+            commands::list_companies,
+            commands::get_company,
+            commands::create_company,
+            commands::update_company,
+            commands::archive_company,
+            commands::list_departments,
+            commands::get_department,
+            commands::create_department,
+            commands::update_department,
+            commands::archive_department,
+            commands::list_positions,
+            commands::get_position,
+            commands::create_position,
+            commands::update_position,
+            commands::archive_position
+        ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar a aplicação desktop Tina");
 }

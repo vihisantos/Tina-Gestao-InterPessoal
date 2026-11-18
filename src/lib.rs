@@ -3,11 +3,8 @@
 //! Este crate é o **núcleo** da aplicação desktop. Ele não contém entry point:
 //! o executável é `src-tauri/src/main.rs`, que o utiliza como biblioteca.
 //!
-//! Nesta fase do projeto apenas os módulos necessários ao bootstrap desktop
-//! são declarados: configuração, erros e banco SQLite. Os demais módulos de
-//! arquitetura (`core`, `planner`, `agent`, `route`, `memory`, `auth`, `eval`,
-//! `exec`, `activity`, `adapter`, `mcp`) seguem preservados em `src/` e serão
-//! declarados nas fases seguintes, quando suas implementações existirem.
+//! Nesta fase do projeto os módulos necessários ao bootstrap desktop
+//! são declarados: configuração, erros, banco SQLite e instalação.
 
 #![deny(missing_docs)]
 
@@ -18,12 +15,14 @@ use crate::error::Result;
 
 pub mod config;
 pub mod error;
+pub mod core;
 
-/// Camada de persistência SQLite (arquivo preservado de `src/infra/db.rs`).
-#[path = "infra/db.rs"]
-pub mod db;
+pub mod infra;
 
-pub use db::Database;
+#[cfg(test)]
+mod tests;
+
+pub use infra::Database;
 pub use error::{Result as TinaResult, TinaError};
 
 /// Versão da plataforma, obtida do manifesto Cargo.

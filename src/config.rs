@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::error::Result;
 
@@ -29,6 +30,8 @@ pub struct AppConfig {
     pub database_path: PathBuf,
     /// Diretório de logs locais.
     pub log_path: PathBuf,
+    /// ID da instalação atual (do registro de instalações).
+    pub installation_id: String,
     /// Configuração do provedor autorizado (NVIDIA NIM).
     pub nvidia: NvidiaConfig,
     /// Políticas de segurança locais.
@@ -121,10 +124,12 @@ impl Default for FeatureFlags {
 impl Default for AppConfig {
     fn default() -> Self {
         let data_dir = tina_data_dir();
+        let installation_id = Uuid::new_v4().to_string();
         Self {
             data_dir: data_dir.clone(),
             database_path: data_dir.join("tina.db"),
             log_path: data_dir.join("logs"),
+            installation_id,
             nvidia: NvidiaConfig::default(),
             security: SecurityConfig::default(),
             features: FeatureFlags::default(),

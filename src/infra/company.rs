@@ -129,16 +129,25 @@ impl<'a> CompanyRepository<'a> {
     }
 
     /// Atualiza o nome da empresa (apenas se pertencer à instalação)
-    pub async fn update_name(&self, company_id: &str, installation_id: &str, new_name: &str) -> Result<()> {
-        let result = sqlx::query("UPDATE companies SET name = ? WHERE id = ? AND installation_id = ?")
-            .bind(new_name)
-            .bind(company_id)
-            .bind(installation_id)
-            .execute(self.pool)
-            .await?;
+    pub async fn update_name(
+        &self,
+        company_id: &str,
+        installation_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        let result =
+            sqlx::query("UPDATE companies SET name = ? WHERE id = ? AND installation_id = ?")
+                .bind(new_name)
+                .bind(company_id)
+                .bind(installation_id)
+                .execute(self.pool)
+                .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TinaError::Other("Company not found or doesn't belong to installation".to_string()).into());
+            return Err(TinaError::Other(
+                "Company not found or doesn't belong to installation".to_string(),
+            )
+            .into());
         }
 
         Ok(())
@@ -158,14 +167,19 @@ impl<'a> CompanyRepository<'a> {
 
     /// Arquiva uma empresa (não exclui fisicamente) - apenas se pertencer à instalação
     pub async fn archive(&self, company_id: &str, installation_id: &str) -> Result<()> {
-        let result = sqlx::query("UPDATE companies SET status = 'inactive' WHERE id = ? AND installation_id = ?")
-            .bind(company_id)
-            .bind(installation_id)
-            .execute(self.pool)
-            .await?;
+        let result = sqlx::query(
+            "UPDATE companies SET status = 'inactive' WHERE id = ? AND installation_id = ?",
+        )
+        .bind(company_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TinaError::Other("Company not found or doesn't belong to installation".to_string()).into());
+            return Err(TinaError::Other(
+                "Company not found or doesn't belong to installation".to_string(),
+            )
+            .into());
         }
 
         Ok(())
@@ -194,7 +208,11 @@ impl<'a> CompanyRepository<'a> {
     }
 
     /// Verifica se empresa pode ser arquivada - apenas se pertencer à instalação
-    pub async fn can_archive_for_installation(&self, company_id: &str, installation_id: &str) -> Result<bool> {
+    pub async fn can_archive_for_installation(
+        &self,
+        company_id: &str,
+        installation_id: &str,
+    ) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM departments WHERE company_id = ? AND status = 'active'",
         )

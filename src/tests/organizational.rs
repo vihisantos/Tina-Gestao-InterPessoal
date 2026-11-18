@@ -540,7 +540,8 @@ async fn test_tinaapp_initialization_idempotent() {
         .unwrap()
         .as_nanos();
 
-    let db_path = std::env::temp_dir().join(format!("tina-init-test-{}-{}.db", test_name, timestamp));
+    let db_path =
+        std::env::temp_dir().join(format!("tina-init-test-{}-{}.db", test_name, timestamp));
     let installation_id = "test-init-installation-id";
     let owner_uuid = "test-init-owner-uuid";
 

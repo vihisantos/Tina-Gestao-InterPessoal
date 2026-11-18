@@ -277,8 +277,14 @@ features = { mcp_enabled = true, local_embeddings = false, telemetry_enabled = f
             // Simular a migração manualmente para testar
             let map: toml::Value = toml::from_str(&content_before).unwrap();
             if let toml::Value::Table(mut table) = map {
-                assert!(!table.contains_key("owner_uuid"), "owner_uuid should not exist yet");
-                table.insert("owner_uuid".to_string(), toml::Value::String(Uuid::new_v4().to_string()));
+                assert!(
+                    !table.contains_key("owner_uuid"),
+                    "owner_uuid should not exist yet"
+                );
+                table.insert(
+                    "owner_uuid".to_string(),
+                    toml::Value::String(Uuid::new_v4().to_string()),
+                );
 
                 let migrated_content = toml::to_string_pretty(&toml::Value::Table(table)).unwrap();
                 assert!(

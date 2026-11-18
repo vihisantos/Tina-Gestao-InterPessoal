@@ -64,7 +64,11 @@ impl TinaApp {
 
     /// Initialize TinaApp at a specific path (for testing).
     /// This allows isolated testing with temporary databases.
-    pub async fn initialize_at(database_path: &std::path::Path, installation_id: &str, owner_uuid: &str) -> Result<Self> {
+    pub async fn initialize_at(
+        database_path: &std::path::Path,
+        installation_id: &str,
+        owner_uuid: &str,
+    ) -> Result<Self> {
         let data_dir = database_path
             .parent()
             .expect("Database path must have parent directory")

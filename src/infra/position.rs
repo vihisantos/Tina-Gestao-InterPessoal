@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::core::position::{Position, PositionStatus};
-use crate::error::Result;
+use crate::error::{Result, TinaError};
 
 /// Representa uma linha de posição do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -237,5 +237,74 @@ impl<'a> PositionRepository<'a> {
         .await?;
 
         Ok(row.map(|r| r.into()))
+    }
+
+    /// Atualiza o nome do cargo (apenas se pertencer à instalação via empresa)
+    pub async fn update_name_with_scope(
+        &self,
+        position_id: &str,
+        installation_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(position_id, &company.id).await? {
+                sqlx::query("UPDATE positions SET name = ? WHERE id = ?")
+                    .bind(new_name)
+                    .bind(position_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other("Position not found or doesn't belong to installation".to_string()).into())
+    }
+
+    /// Atualiza a descrição do cargo (apenas se pertencer à instalação via empresa)
+    pub async fn update_description_with_scope(
+        &self,
+        position_id: &str,
+        installation_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(position_id, &company.id).await? {
+                sqlx::query("UPDATE positions SET description = ? WHERE id = ?")
+                    .bind(new_description)
+                    .bind(position_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other("Position not found or doesn't belong to installation".to_string()).into())
+    }
+
+    /// Arquiva um cargo - apenas se pertencer à instalação via empresa
+    pub async fn archive_with_scope(&self, position_id: &str, installation_id: &str) -> Result<()> {
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(position_id, &company.id).await? {
+                sqlx::query("UPDATE positions SET status = 'inactive' WHERE id = ?")
+                    .bind(position_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other(
+            "Position not found or doesn't belong to installation".to_string(),
+        )
+        .into())
     }
 }

@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::core::department::{Department, DepartmentStatus};
-use crate::error::Result;
+use crate::error::{Result, TinaError};
 
 /// Representa uma linha de departamento do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -188,5 +188,75 @@ impl<'a> DepartmentRepository<'a> {
         .await?;
 
         Ok(count == 0)
+    }
+
+    /// Atualiza o nome do departamento (apenas se pertencer à instalação via empresa)
+    pub async fn update_name_with_scope(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        // Primeiro verifica se o departamento pertence a alguma empresa da instalação
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(department_id, &company.id).await? {
+                sqlx::query("UPDATE departments SET name = ? WHERE id = ?")
+                    .bind(new_name)
+                    .bind(department_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other("Department not found or doesn't belong to installation".to_string()).into())
+    }
+
+    /// Atualiza a descrição do departamento (apenas se pertencer à instalação via empresa)
+    pub async fn update_description_with_scope(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(department_id, &company.id).await? {
+                sqlx::query("UPDATE departments SET description = ? WHERE id = ?")
+                    .bind(new_description)
+                    .bind(department_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other("Department not found or doesn't belong to installation".to_string()).into())
+    }
+
+    /// Arquiva um departamento - apenas se pertencer à instalação via empresa
+    pub async fn archive_with_scope(&self, department_id: &str, installation_id: &str) -> Result<()> {
+        let company_repo = crate::infra::CompanyRepository::new(self.pool);
+        let companies = company_repo.list_by_installation(installation_id).await?;
+
+        for company in companies {
+            if self.belongs_to_company(department_id, &company.id).await? {
+                sqlx::query("UPDATE departments SET status = 'inactive' WHERE id = ?")
+                    .bind(department_id)
+                    .execute(self.pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        Err(TinaError::Other(
+            "Department not found or doesn't belong to installation".to_string(),
+        )
+        .into())
     }
 }

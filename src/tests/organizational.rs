@@ -90,7 +90,7 @@ async fn test_company_crud() {
 
     // Atualizar nome
     company_repo
-        .update_name(&company.id, "Empresa Atualizada")
+        .update_name_unrestricted(&company.id, "Empresa Atualizada")
         .await
         .expect("Failed to update company");
 
@@ -102,7 +102,7 @@ async fn test_company_crud() {
 
     // Arquivar
     company_repo
-        .archive(&company.id)
+        .archive_unrestricted(&company.id)
         .await
         .expect("Failed to archive company");
 
@@ -532,25 +532,29 @@ async fn test_owner_uuid_independent() {
 /// Testa inicialização idempotente real como TinaApp faria
 #[tokio::test]
 async fn test_tinaapp_initialization_idempotent() {
+    use crate::TinaApp;
+
     let test_name = "tinaapp_init_idempotent";
-    let (db, path) = setup_test_db(test_name).await;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
 
-    let repo = InstallationRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
-
+    let db_path = std::env::temp_dir().join(format!("tina-init-test-{}-{}.db", test_name, timestamp));
     let installation_id = "test-init-installation-id";
     let owner_uuid = "test-init-owner-uuid";
 
-    // Criar instalação com ID específico
-    let inst = repo
-        .create_with_id("Tina", installation_id, owner_uuid)
+    // Primeira inicialização usando TinaApp::initialize_at
+    let tina1 = TinaApp::initialize_at(&db_path, installation_id, owner_uuid)
         .await
-        .expect("Failed to create installation");
+        .expect("Failed to initialize TinaApp first time");
 
-    assert_eq!(inst.id, installation_id);
-    assert_eq!(inst.owner_uuid, owner_uuid);
+    // Verificar identidade da TinaApp
+    assert_eq!(tina1.config().installation_id, installation_id);
+    assert_eq!(tina1.config().owner_uuid, owner_uuid);
 
-    // Criar empresa
+    // Criar empresa usando o repositório
+    let company_repo = crate::infra::CompanyRepository::new(tina1.database().pool());
     let company = company_repo
         .create(installation_id, "Empresa Inicial")
         .await
@@ -564,41 +568,47 @@ async fn test_tinaapp_initialization_idempotent() {
         .expect("Not found");
     assert_eq!(found.name, "Empresa Inicial");
 
-    // Fechar banco e reabrir
-    drop(db);
+    // Encerrar a instância
+    drop(tina1);
 
-    let db2 = Database::open(Path::new(&path))
+    // Segunda inicialização com MESMA configuração (mesmo banco, mesmos IDs)
+    let tina2 = TinaApp::initialize_at(&db_path, installation_id, owner_uuid)
         .await
-        .expect("Failed to reopen");
-    let repo2 = InstallationRepository::new(db2.pool());
-    let company_repo2 = CompanyRepository::new(db2.pool());
+        .expect("Failed to initialize TinaApp second time");
 
-    // Verificar instalação persistiu
-    let inst2 = repo2
+    // Verificar que a identidade persistiu
+    assert_eq!(tina2.config().installation_id, installation_id);
+    assert_eq!(tina2.config().owner_uuid, owner_uuid);
+
+    // Verificar que a instalação ainda existe no banco
+    let repo2 = crate::infra::InstallationRepository::new(tina2.database().pool());
+    let inst = repo2
         .find_by_id(installation_id)
         .await
         .expect("Failed to find")
-        .expect("Should exist");
-    assert_eq!(inst2.id, inst.id);
-    assert_eq!(inst2.owner_uuid, owner_uuid);
+        .expect("Installation should exist");
+    assert_eq!(inst.id, installation_id);
+    assert_eq!(inst.owner_uuid, owner_uuid);
 
-    // Verificar empresa persistiu
+    // Verificar que a empresa ainda existe
+    let company_repo2 = crate::infra::CompanyRepository::new(tina2.database().pool());
     let company2 = company_repo2
         .find_by_id_optional(&company.id)
         .await
         .expect("Failed")
-        .expect("Should exist");
+        .expect("Company should still exist");
     assert_eq!(company2.name, company.name);
 
-    // Verificar único registro
+    // Verificar apenas UM registro de instalação
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM installations WHERE id = ?")
         .bind(installation_id)
-        .fetch_one(db2.pool())
+        .fetch_one(tina2.database().pool())
         .await
         .expect("Failed to count");
-    assert_eq!(count, 1);
+    assert_eq!(count, 1, "Should have exactly one installation record");
 
-    cleanup_test_db(&path);
+    // Limpar
+    let _ = std::fs::remove_file(&db_path);
 }
 
 /// Testa isolamento entre instalações no nível de comandos

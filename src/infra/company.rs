@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::core::company::{Company, CompanyStatus};
-use crate::error::Result;
+use crate::error::{Result, TinaError};
 
 /// Representa uma linha de empresa do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -128,8 +128,25 @@ impl<'a> CompanyRepository<'a> {
         Ok(count > 0)
     }
 
-    /// Atualiza o nome da empresa
-    pub async fn update_name(&self, company_id: &str, new_name: &str) -> Result<()> {
+    /// Atualiza o nome da empresa (apenas se pertencer à instalação)
+    pub async fn update_name(&self, company_id: &str, installation_id: &str, new_name: &str) -> Result<()> {
+        let result = sqlx::query("UPDATE companies SET name = ? WHERE id = ? AND installation_id = ?")
+            .bind(new_name)
+            .bind(company_id)
+            .bind(installation_id)
+            .execute(self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other("Company not found or doesn't belong to installation".to_string()).into());
+        }
+
+        Ok(())
+    }
+
+    /// Atualiza apenas o nome da empresa (sem verificação de instalação)
+    /// Usado internamente quando a verificação já foi feita no nível do comando
+    pub async fn update_name_unrestricted(&self, company_id: &str, new_name: &str) -> Result<()> {
         sqlx::query("UPDATE companies SET name = ? WHERE id = ?")
             .bind(new_name)
             .bind(company_id)
@@ -139,24 +156,29 @@ impl<'a> CompanyRepository<'a> {
         Ok(())
     }
 
-    /// Arquiva uma empresa (não exclui fisicamente)
-    pub async fn archive(&self, company_id: &str) -> Result<()> {
+    /// Arquiva uma empresa (não exclui fisicamente) - apenas se pertencer à instalação
+    pub async fn archive(&self, company_id: &str, installation_id: &str) -> Result<()> {
+        let result = sqlx::query("UPDATE companies SET status = 'inactive' WHERE id = ? AND installation_id = ?")
+            .bind(company_id)
+            .bind(installation_id)
+            .execute(self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other("Company not found or doesn't belong to installation".to_string()).into());
+        }
+
+        Ok(())
+    }
+
+    /// Arquiva uma empresa sem verificação de instalação (usado quando já verificado)
+    pub async fn archive_unrestricted(&self, company_id: &str) -> Result<()> {
         sqlx::query("UPDATE companies SET status = 'inactive' WHERE id = ?")
             .bind(company_id)
             .execute(self.pool)
             .await?;
 
         Ok(())
-    }
-
-    /// Verifica se empresa existe
-    pub async fn exists(&self, company_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies WHERE id = ?")
-            .bind(company_id)
-            .fetch_one(self.pool)
-            .await?;
-
-        Ok(count > 0)
     }
 
     /// Verifica se empresa pode ser arquivada (sem departamentos ativos)
@@ -169,5 +191,30 @@ impl<'a> CompanyRepository<'a> {
         .await?;
 
         Ok(count == 0)
+    }
+
+    /// Verifica se empresa pode ser arquivada - apenas se pertencer à instalação
+    pub async fn can_archive_for_installation(&self, company_id: &str, installation_id: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM departments WHERE company_id = ? AND status = 'active'",
+        )
+        .bind(company_id)
+        .fetch_one(self.pool)
+        .await?;
+
+        if count > 0 {
+            return Ok(false);
+        }
+
+        // Verificar se a empresa pertence à instalação
+        let company_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM companies WHERE id = ? AND installation_id = ?",
+        )
+        .bind(company_id)
+        .bind(installation_id)
+        .fetch_one(self.pool)
+        .await?;
+
+        Ok(company_count > 0)
     }
 }

@@ -70,7 +70,17 @@ fn main() {
             commands::get_position,
             commands::create_position,
             commands::update_position,
-            commands::archive_position
+            commands::archive_position,
+            commands::create_employee,
+            commands::get_employee,
+            commands::list_employees_by_company,
+            commands::list_employees_by_department,
+            commands::update_employee,
+            commands::update_employee_responsibilities,
+            commands::change_employee_position,
+            commands::assign_employee_supervisor,
+            commands::deactivate_employee,
+            commands::reactivate_employee
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar a aplicação desktop Tina");

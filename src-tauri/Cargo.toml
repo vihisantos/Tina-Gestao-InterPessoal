@@ -11,3 +11,4 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 tina = { path = ".." }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }

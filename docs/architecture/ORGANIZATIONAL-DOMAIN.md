@@ -72,18 +72,31 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 
 **Tabela:** `employees` (NÃO tem `company_id`)
 
-| Campo | FK | Observação |
-|-------|-----|------------|
-| `id` | - | PK |
-| `position_id` | positions → CASCADE | Via cadeia: position → dept → company |
-| `name` | - | NN |
-| `supervisor_id` | employees → SET NULL | Auto-relação |
-| `model_config` | - | NN |
-| `authority_override` | - | NÃO é permissão automática |
+| Campo | Tipo | FK | Observação |
+|-------|------|-----|------------|
+| `id` | TEXT PK | - | UUID gerado |
+| `position_id` | TEXT NN | positions → CASCADE | Via cadeia: position → dept → company |
+| `name` | TEXT NN | - | Nome/identidade do funcionário |
+| `responsibilities` | TEXT | - | Responsabilidades do funcionário |
+| `supervisor_id` | TEXT | employees → SET NULL | Superior direto (auto-relação) |
+| `model_config` | TEXT NN | - | Configuração do modelo de IA |
+| `authority_override` | INTEGER | - | NÃO é permissão automática |
+| `status` | TEXT NN | - | 'active' ou 'inactive' (Mig 003) |
+| `is_active` | INTEGER NN | - | 1 ou 0 (compatibilidade) |
+| `created_at` | TEXT NN | - | Timestamp de criação |
+| `updated_at` | TEXT NN | - | Timestamp de atualização (trigger) |
+| `deactivated_at` | TEXT | - | Data de desativação (Mig 002) |
 
-**Importante:** Empresa = `position.department.company`
+**Importante:** Empresa = `position.department.company`. Não duplicar `company_id` diretamente na tabela.
 
-### 2.6 Tabelas Adicionais
+### 2.6 Migrations Adicionais (Fase 2 - Funcionários)
+
+| Migration | Descrição |
+|-----------|-----------|
+| `002_employee_deactivated_at.sql` | Adiciona coluna `deactivated_at` à tabela `employees` |
+| `003_employee_status_column.sql` | Adiciona coluna `status` à tabela `employees` (consistente com outras tabelas organizacionais) |
+
+### 2.7 Tabelas Adicionais
 
 - `delegations` — Tarefas delegadas
 - `memories` — Memórias com `company_id`, `employee_id`, `department_id`
@@ -104,13 +117,17 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 | `src/error.rs` | Implementado | `TinaError` enum completo com 18 variants — exportado publicamente |
 | `src/lib.rs` | Implementado | Entry point biblioteca, declara módulos principais |
 | `src/infra/db.rs` | Implementado | `Database::open()` com SQLx migrations — funcional |
+| `src/core/employee.rs` | Implementado (Missão 005) | Entidade `Employee` com `EmployeeStatus`, `is_active()`, `supervisor_id()` |
+| `src/infra/employee.rs` | Implementado (Missão 005) | `EmployeeRepository` com CRUD, isolamento por empresa/instalação, desativação/reativação, mudança de cargo, atribuição de supervisor |
+| `src/tests/employee.rs` | Implementado (Missão 005) | 20 testes de integração com SQLite isolado |
 
 ### 3.2 src-tauri/ (Tauri 2 integration)
 
 | Arquivo | Status | Evidência |
 |---------|--------|-----------|
 | `src-tauri/build.rs` | Implementado | Build script Tauri padrão |
-| `src-tauri/src/main.rs` | Implementado | Entry point Tauri 2, usa `tina::TinaApp` |
+| `src-tauri/src/main.rs` | Implementado | Entry point Tauri 2, registra commands de funcionários |
+| `src-tauri/src/commands/employee.rs` | Implementado (Missão 005) | 10 commands: create, get, list by company/department, update info/responsibilities, change position, assign supervisor, deactivate, reactivate |
 
 ### 3.3 Placeholder (Estrutura, não compila ou usado)
 
@@ -177,8 +194,17 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 
 ## 4. Próximos Passos para Fase 2
 
-1. Criar serviços de repositório para cada entidade
-2. Implementar validação de ciclos hierárquicos
-3. Garantir isolamento por empresa no backend
-4. Criar auditoria de eventos organizacionais
-5. Implementar interface administrativa básica
+### 4.1 Concluído — Missão Tina-ORG-005 (Cadastro e Ciclo de Vida de Funcionários IA)
+
+- Entidade `Employee` implementada (`src/core/employee.rs`)
+- Repositório `EmployeeRepository` implementado (`src/infra/employee.rs`)
+- Commands Tauri implementados (`src-tauri/src/commands/employee.rs`)
+- Migrations 002 e 003 criadas (`migration/002_employee_deactivated_at.sql`, `migration/003_employee_status_column.sql`)
+- 20 testes de integração passando (`src/tests/employee.rs`)
+- Isolamento entre empresas e instalações comprovado
+
+### 4.2 Restantes para Fase 2
+
+1. Implementar validação de ciclos hierárquicos (impedir supervisor circular)
+2. Criar auditoria de eventos organizacionais
+3. Implementar interface administrativa básica

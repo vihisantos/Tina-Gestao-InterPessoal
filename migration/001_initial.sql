@@ -32,12 +32,14 @@ CREATE TABLE IF NOT EXISTS departments (
     name TEXT NOT NULL,
     code TEXT NOT NULL,
     description TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(company_id, code)
 );
 
 CREATE INDEX IF NOT EXISTS idx_departments_company ON departments(company_id);
 CREATE INDEX IF NOT EXISTS idx_departments_code ON departments(code);
+CREATE INDEX IF NOT EXISTS idx_departments_status ON departments(status);
 
 -- POSITIONS -----------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS positions (
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS positions (
     level INTEGER NOT NULL DEFAULT 0 CHECK (level >= 0),
     authority_level INTEGER NOT NULL DEFAULT 0 CHECK (authority_level >= 0),
     description TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(department_id, name)
 );
@@ -54,6 +57,7 @@ CREATE TABLE IF NOT EXISTS positions (
 CREATE INDEX IF NOT EXISTS idx_positions_department ON positions(department_id);
 CREATE INDEX IF NOT EXISTS idx_positions_level ON positions(level);
 CREATE INDEX IF NOT EXISTS idx_positions_auth ON positions(authority_level);
+CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
 
 -- EMPLOYEES -----------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS employees (

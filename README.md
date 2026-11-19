@@ -1,6 +1,18 @@
-# Tina — Agência de Gestão
+<p align="center">
+  <img src="src-frontend/static/tina.png" alt="Tina, a mascote rosa do aplicativo" width="180" />
+</p>
 
-**Status:** Fase 0 - Arquitetura e Fundação
+<h1 align="center">Tina — Agência de Gestão</h1>
+
+<p align="center">
+  <em>Inteligência pessoal e operacional — fundo branco, alma rosa.</em>
+</p>
+
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="Ícone do aplicativo Tina" width="88" />
+</p>
+
+**Status:** Fase 1 — Desktop Inicial (bootstrap em andamento)
 
 ---
 
@@ -9,6 +21,43 @@
 A Tina é uma plataforma de inteligência pessoal e operacional: uma equipe de agentes de IA com papel, responsabilidade, hierarquia e memória própria, trabalhando sob a autoridade máxima do proprietário.
 
 Ela foi concebida para pequenas e médias empresas que querem operação séria, com disciplina, sem abrir mão da soberania sobre os próprios dados.
+
+### A Tina tem rosto
+
+A Tina não é um nome genérico: é uma personagem. Uma criatura rosa, de corpo
+arredondado e macio, sem boca, dois olhos ovais pretos e bracinhos erguidos — sempre
+flutuando, como quem acabou de chegar para resolver o dia. Essa personagem **é** a
+identidade do produto: aparece no logo do app, dentro das telas como mascote, no
+ícone da área de trabalho e no favicon da janela.
+
+Toda a interface nasce dela: fundo branco, rosa em cada detalhe, nada de tema escuro.
+Quem alterar UI, ícones ou assets deve seguir o [AGENTS.md](AGENTS.md), que registra a
+personagem, os arquivos oficiais e os tokens de cor.
+
+---
+
+## Identidade visual
+
+| | |
+|---|---|
+| <img src="src-frontend/static/tina.png" alt="Tina" width="120" /> | **Personagem:** mascote rosa, corpo arredondado, olhos ovais pretos, sem boca, flutuando. Arte em `src-frontend/static/tina.png`. |
+| <img src="src-tauri/icons/icon.png" alt="Ícone" width="120" /> | **Ícone:** a mesma personagem em tile de cantos arredondados, fundo `#fff7fa` → `#ffe2ed`, borda `#ffc7db`. Gerado em `src-tauri/icons/`. |
+
+| Cor | Hex | Onde |
+|---|---|---|
+| Rosa Tina | `#ee6495` | Cor principal, botões, destaques |
+| Rosa forte | `#d94f80` | Hover, gradiente do botão |
+| Rosa profundo | `#c9266b` | Texto de ênfase |
+| Rosa suave | `#f7a8c4` | Detalhes e bordas de destaque |
+| Branco | `#ffffff` | Fundo de todas as telas |
+| Rosa de fundo | `#fff7fa` | Chips, cards, realces |
+
+Os tokens ficam em [`src-frontend/src/theme.css`](src-frontend/src/theme.css) e são
+consumidos como `var(--tina-*)`. A UI reutiliza
+[`Logo`](src-frontend/src/lib/components/Logo.svelte),
+[`Card`](src-frontend/src/lib/components/Card.svelte),
+[`Badge`](src-frontend/src/lib/components/Badge.svelte) e
+[`Button`](src-frontend/src/lib/components/Button.svelte).
 
 ---
 
@@ -38,6 +87,30 @@ npx tauri dev
 
 > `npx tauri dev` **não gera instalador**. O empacotamento está desativado no
 > `tauri.conf.json` (`bundle.active: false`).
+
+---
+
+## O que a Tina vai fazer
+
+O objetivo final é uma **agência de gestão interpessoal** rodando na máquina do
+proprietário, sem depender de servidor. Nas fases seguintes do
+[ROADMAP.md](ROADMAP.md):
+
+1. **Entender o pedido, não só o comando.** A Tina Central recebe um objetivo e o
+decompõe em tarefas com plano, contexto e critério de conclusão (Fase 2).
+2. **Montar a organização.** Cria empresas, departamentos, cargos e hierarquia, e
+   contrata funcionários de IA com papel, chefe e responsabilidade definidos (Fases 2–3).
+3. **Conversar com modelos NVIDIA.** Roteia cada tarefa para o modelo adequado via
+   NVIDIA NIM, com streaming e tratamento de falha de credencial (Fase 3).
+4. **Lembrar.** Mantém memória pessoal, profissional e organizacional, com busca
+   vetorial local no SQLite — o contexto certo no momento certo (Fase 3).
+5. **Executar com limites.** Ferramentas de arquivo e processo em sandbox, com
+   permissões granulares e avaliação do resultado antes de valer (Fase 4).
+6. **Prestar contas.** Cada evento fica registrado e visível no Comando Central:
+   quem pediu, quem executou, o que mudou (Fase 5).
+
+O princípio que atravessa tudo: **a autoridade é do proprietário**. A Tina propõe,
+executa o que foi autorizado e deixa rastro — nunca age fora do escopo concedido.
 
 ---
 
@@ -132,6 +205,7 @@ Tina-Gestao-InterPessoal/
 
 ## Documentação
 
+- **[AGENTS.md](AGENTS.md)** - Identidade da personagem e regras de UI para agentes de IA
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Arquitetura detalhada da plataforma
 - **[TECHNOLOGY_DECISIONS.md](TECHNOLOGY_DECISIONS.md)** - Decisões tecnológicas fundamentadas
 - **[ROADMAP.md](ROADMAP.md)** - Plano de implementação por fases

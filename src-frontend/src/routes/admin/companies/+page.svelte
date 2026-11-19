@@ -3,7 +3,7 @@
     import { invoke } from '@tauri-apps/api/core';
     import Card from '$lib/components/Card.svelte';
     import Badge from '$lib/components/Badge.svelte';
-    import { writable } from 'svelte/store';
+    import { get, writable } from 'svelte/store';
 
     interface CompanyDto {
         id: string;
@@ -34,7 +34,7 @@
     async function createCompany(event: SubmitEvent) {
         event.preventDefault();
         const name = newCompanyName.trim();
-        if (!name || isCreating) return;
+        if (!name || get(isCreating)) return;
 
         isCreating.set(true);
         error.set(null);

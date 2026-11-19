@@ -355,5 +355,4 @@ impl<'a> PositionRepository<'a> {
         }
         Ok(())
     }
-
 }

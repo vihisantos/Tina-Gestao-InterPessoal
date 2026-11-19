@@ -239,78 +239,115 @@ impl<'a> PositionRepository<'a> {
         Ok(row.map(|r| r.into()))
     }
 
-    /// Atualiza o nome do cargo (apenas se pertencer à instalação via empresa)
+    /// Atualiza o nome do cargo com escopo aplicado atomicamente no SQL.
     pub async fn update_name_with_scope(
         &self,
         position_id: &str,
         installation_id: &str,
         new_name: &str,
     ) -> Result<()> {
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(position_id, &company.id).await? {
-                sqlx::query("UPDATE positions SET name = ? WHERE id = ?")
-                    .bind(new_name)
-                    .bind(position_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Position not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET name = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(new_name)
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Position not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
 
-    /// Atualiza a descrição do cargo (apenas se pertencer à instalação via empresa)
+    /// Atualiza a descrição do cargo com escopo aplicado atomicamente no SQL.
     pub async fn update_description_with_scope(
         &self,
         position_id: &str,
         installation_id: &str,
         new_description: Option<&str>,
     ) -> Result<()> {
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(position_id, &company.id).await? {
-                sqlx::query("UPDATE positions SET description = ? WHERE id = ?")
-                    .bind(new_description)
-                    .bind(position_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Position not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET description = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(new_description)
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Position not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
 
-    /// Arquiva um cargo - apenas se pertencer à instalação via empresa
+    /// Arquiva um cargo com escopo aplicado atomicamente no SQL.
     pub async fn archive_with_scope(&self, position_id: &str, installation_id: &str) -> Result<()> {
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(position_id, &company.id).await? {
-                sqlx::query("UPDATE positions SET status = 'inactive' WHERE id = ?")
-                    .bind(position_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Position not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET status = 'inactive'
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Position not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
+
 }

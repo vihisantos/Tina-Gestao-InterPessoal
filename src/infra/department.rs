@@ -304,5 +304,4 @@ impl<'a> DepartmentRepository<'a> {
         }
         Ok(())
     }
-
 }

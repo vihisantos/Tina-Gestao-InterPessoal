@@ -3,6 +3,8 @@
 **Status:** Especificação | **Fase:** 2 — Fundação Organizacional  
 **Issue:** #1 — Auditoria técnica e arquitetura do domínio organizacional
 
+> **Estado real da implementação nesta entrega:** o banco e o arquivo local de configuração mantêm `installation_id` e `owner_uuid`, e a inicialização confere se ambos correspondem. Isso estabelece uma identidade local persistida; **não implementa login, sessão autenticada ou autorização de proprietário**. Os comandos Tauri desta fase operam no contexto local do aplicativo. As regras abaixo descrevem o modelo-alvo e não devem ser interpretadas como funcionalidades já entregues.
+
 ---
 
 ## 1. Princípio Fundamental
@@ -27,24 +29,28 @@ O proprietário é identificado por `installations.owner_uuid` (coluna TEXT).
 **Decisão Arquitetural:** Não há tabela `owners` separada. O proprietário é:
 - Representado por um UUID único
 - Persistido na tabela `installations`
-- Protegido contra alterações no backend
+- Mantido também na configuração local para identificar a instalação
+- Comparado com o registro persistido durante a inicialização; divergências interrompem o bootstrap
+- **Não é uma credencial e, isoladamente, não prova que a pessoa usando o aplicativo é o proprietário**
 
-### 2.2 Autenticação
+### 2.2 Autenticação — ainda não implementada
 
 O frontend **não deve** enviar o UUID do proprietário como prova de autenticação.
 
-Em vez disso, o backend deve:
-1. Receber uma identidade autenticada (session token, API key, etc.)
-2. Resolver a identidade autenticada a um `employee_id` ou flag de proprietário
-3. Validar permissões com base nessa identidade resolvida
+**Nesta entrega não existe login, sessão autenticada, token de proprietário ou resolução de identidade autenticada.** A presença de `owner_uuid` na configuração e no banco não autentica o usuário. Um mecanismo local de autenticação deverá ser especificado e implementado em uma fase própria antes de afirmar que operações estão protegidas por identidade autenticada.
 
-### 2.3 Autorização
+O modelo futuro deverá:
+1. Receber uma identidade autenticada por mecanismo local seguro
+2. Resolver essa identidade no backend
+3. Validar permissões com base na identidade resolvida, nunca em um UUID arbitrário enviado pela interface
 
-A autorização é determinada pelo backend **com base em quem está executando a operação**, não por IDs passivamente recebidos do frontend.
+### 2.3 Autorização — modelo-alvo, não entregue nesta fase
 
-**Regra crítica:** IDs recebidos do frontend são **seletores** que precisam ser validados.
+A autorização deverá ser determinada pelo backend **com base em quem está executando a operação**, não por IDs passivamente recebidos do frontend.
 
----
+**Regra crítica para a implementação futura:** IDs recebidos do frontend são **seletores** que precisam ser validados.
+
+Os comandos organizacionais entregues nesta fase aplicam o escopo de instalação aos dados consultados e alterados, mas ainda não constituem um sistema completo de autenticação/autorização do proprietário ou de funcionários.
 
 ## 3. Proprietário vs Funcionário
 
@@ -155,11 +161,13 @@ TODO: Toda verificação de permissão deve passar por uma política explícita 
 
 ---
 
-## 7. Decisão Final
+## 7. Decisão Final e estado de entrega
 
-- **owner_uuid** é a chave de identificação do proprietário na instalação
-- **Autenticação** deve ser mecanismo externo (session, API key)
-- **Autorização** é feita pelo backend Rust com políticas explícitas
-- O **frontend NUNCA** envia credenciais ou IDs de autorização
+- **owner_uuid** identifica o proprietário declarado no registro da instalação; não é credencial de autenticação
+- A conferência entre configuração e banco detecta divergência de identidade e interrompe a inicialização
+- **Autenticação local ainda deverá ser implementada** antes de afirmar que o proprietário está autenticado
+- **Autorização completa por identidade e políticas explícitas ainda deverá ser implementada**
+- O **frontend não deve enviar credenciais ou IDs de autorização**
 - **authority_override** é um atributo, não uma permissão automática
 - O **proprietário não é funcionário** — são identidades distintas
+- Este documento contém princípios e requisitos futuros; itens não implementados estão identificados como modelo-alvo

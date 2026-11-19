@@ -325,6 +325,12 @@ impl<'a> PositionRepository<'a> {
             SET status = 'inactive'
             WHERE id = ?
               AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM employees e
+                  WHERE e.position_id = positions.id
+                    AND e.is_active = 1
+              )
               AND EXISTS (
                   SELECT 1
                   FROM departments d

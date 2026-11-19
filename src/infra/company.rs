@@ -168,7 +168,19 @@ impl<'a> CompanyRepository<'a> {
     /// Arquiva uma empresa (não exclui fisicamente) - apenas se pertencer à instalação
     pub async fn archive(&self, company_id: &str, installation_id: &str) -> Result<()> {
         let result = sqlx::query(
-            "UPDATE companies SET status = 'inactive' WHERE id = ? AND installation_id = ?",
+            r#"
+            UPDATE companies
+            SET status = 'inactive'
+            WHERE id = ?
+              AND installation_id = ?
+              AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  WHERE d.company_id = companies.id
+                    AND d.status = 'active'
+              )
+            "#,
         )
         .bind(company_id)
         .bind(installation_id)

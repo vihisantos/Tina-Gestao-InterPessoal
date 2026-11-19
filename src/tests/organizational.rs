@@ -738,6 +738,10 @@ async fn test_command_level_isolation() {
         .await
         .expect("A instalação proprietária deve atualizar seu cargo");
 
+    // Arquivamentos devem revalidar seus pré-requisitos dentro do próprio UPDATE.
+    assert!(company_repo.archive(&comp1.id, &inst1.id).await.is_err());
+    assert!(dept_repo.archive_with_scope(&dept1.id, &inst1.id).await.is_err());
+
     // Escritas e arquivamentos com IDs de outra instalação devem falhar.
     assert!(dept_repo
         .update_name_with_scope(&dept2.id, &inst1.id, "Acesso indevido")

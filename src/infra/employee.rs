@@ -72,10 +72,13 @@ impl<'a> EmployeeRepository<'a> {
     ) -> Result<Employee> {
         let id = Uuid::new_v4().to_string();
 
+        // model_config é gravado com um valor padrão provisório. O roteamento
+        // e a seleção definitivos de modelo de IA são responsabilidade de uma
+        // missão posterior; este valor apenas satisfaz o NOT NULL do schema.
         sqlx::query(
             r#"
-            INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'nvidia/nemotron-3.5-bolt-e4b', 'active', datetime('now'), datetime('now'))
+            INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'nvidia/nemotron-3.5-bolt-e4b', 'active', 1, datetime('now'), datetime('now'))
             "#,
         )
         .bind(&id)
@@ -188,11 +191,7 @@ impl<'a> EmployeeRepository<'a> {
     }
 
     /// Verifica se o funcionário pertence à empresa informada (via cadeia completa)
-    pub async fn belongs_to_company(
-        &self,
-        employee_id: &str,
-        company_id: &str,
-    ) -> Result<bool> {
+    pub async fn belongs_to_company(&self, employee_id: &str, company_id: &str) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(*)
@@ -236,12 +235,11 @@ impl<'a> EmployeeRepository<'a> {
 
     /// Verifica se o cargo existe e está ativo
     pub async fn position_exists_and_active(&self, position_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM positions WHERE id = ? AND status = 'active'",
-        )
-        .bind(position_id)
-        .fetch_one(self.pool)
-        .await?;
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM positions WHERE id = ? AND status = 'active'")
+                .bind(position_id)
+                .fetch_one(self.pool)
+                .await?;
 
         Ok(count > 0)
     }
@@ -294,10 +292,7 @@ impl<'a> EmployeeRepository<'a> {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TinaError::Other(
-                "Employee not found".to_string(),
-            )
-            .into());
+            return Err(TinaError::Other("Employee not found".to_string()).into());
         }
 
         Ok(())
@@ -429,8 +424,9 @@ impl<'a> EmployeeRepository<'a> {
             .into());
         }
 
+        // Desativação mantém status e is_active sincronizados (fonte única de verdade)
         let result = sqlx::query(
-            "UPDATE employees SET status = 'inactive', deactivated_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'active'",
+            "UPDATE employees SET status = 'inactive', is_active = 0, deactivated_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'active'",
         )
         .bind(employee_id)
         .execute(self.pool)
@@ -456,8 +452,9 @@ impl<'a> EmployeeRepository<'a> {
             .into());
         }
 
+        // Reativação mantém status e is_active sincronizados (fonte única de verdade)
         let result = sqlx::query(
-            "UPDATE employees SET status = 'active', deactivated_at = NULL, updated_at = datetime('now') WHERE id = ? AND status = 'inactive'",
+            "UPDATE employees SET status = 'active', is_active = 1, deactivated_at = NULL, updated_at = datetime('now') WHERE id = ? AND status = 'inactive'",
         )
         .bind(employee_id)
         .execute(self.pool)
@@ -476,12 +473,11 @@ impl<'a> EmployeeRepository<'a> {
     /// Verifica se o funcionário pode ser desativado (não é o proprietário da instalação)
     /// O proprietário não é um funcionário, então esta verificação é no nível de comando.
     pub async fn count_subordinates(&self, supervisor_id: &str) -> Result<i64> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM employees WHERE supervisor_id = ?",
-        )
-        .bind(supervisor_id)
-        .fetch_one(self.pool)
-        .await?;
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM employees WHERE supervisor_id = ?")
+                .bind(supervisor_id)
+                .fetch_one(self.pool)
+                .await?;
 
         Ok(count)
     }
@@ -527,5 +523,3 @@ impl<'a> EmployeeRepository<'a> {
         Ok(())
     }
 }
-
-

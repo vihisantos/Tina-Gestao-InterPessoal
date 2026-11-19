@@ -81,8 +81,8 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 | `supervisor_id` | TEXT | employees → SET NULL | Superior direto (auto-relação) |
 | `model_config` | TEXT NN | - | Configuração do modelo de IA |
 | `authority_override` | INTEGER | - | NÃO é permissão automática |
-| `status` | TEXT NN | - | 'active' ou 'inactive' (Mig 003) |
-| `is_active` | INTEGER NN | - | 1 ou 0 (compatibilidade) |
+| `status` | TEXT NN | - | Fonte de verdade: 'active' ou 'inactive' (Mig 003) |
+| `is_active` | INTEGER NN | - | Mantida por compatibilidade, sincronizada com `status` (1 ou 0) |
 | `created_at` | TEXT NN | - | Timestamp de criação |
 | `updated_at` | TEXT NN | - | Timestamp de atualização (trigger) |
 | `deactivated_at` | TEXT | - | Data de desativação (Mig 002) |
@@ -95,6 +95,9 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 |-----------|-----------|
 | `002_employee_deactivated_at.sql` | Adiciona coluna `deactivated_at` à tabela `employees` |
 | `003_employee_status_column.sql` | Adiciona coluna `status` à tabela `employees` (consistente com outras tabelas organizacionais) |
+| `004_employee_status_sync.sql` | Backfill de `status` a partir de `is_active` e recria a view `active_employees` usando `status` como fonte de verdade |
+
+**Fonte de verdade do estado do funcionário:** a coluna `status` (`'active'` / `'inactive'`). A coluna `is_active` é mantida por compatibilidade e sempre sincronizada com `status` em todas as operações de criação, desativação e reativação. A view `active_employees` filtra por `status = 'active'`.
 
 ### 2.7 Tabelas Adicionais
 

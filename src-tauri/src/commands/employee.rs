@@ -83,7 +83,8 @@ pub async fn create_employee(
     let installation_id = get_installation_id(&state);
 
     // Validar que o cargo existe, está ativo e pertence à instalação
-    let position_company = get_position_company_and_validate(&db, &request.position_id, &installation_id).await?;
+    let position_company =
+        get_position_company_and_validate(&db, &request.position_id, &installation_id).await?;
 
     // Se houver supervisor, validar que pertence à mesma empresa
     if let Some(sup_id) = &request.supervisor_id {
@@ -332,9 +333,8 @@ async fn get_position_company_and_validate(
     .await
     .map_err(|e| e.to_string())?;
 
-    let (company_id, inst_id) = row.ok_or_else(|| {
-        "Cargo não encontrado, inativo, ou não pertence à instalação".to_string()
-    })?;
+    let (company_id, inst_id) = row
+        .ok_or_else(|| "Cargo não encontrado, inativo, ou não pertence à instalação".to_string())?;
 
     if inst_id != installation_id {
         return Err("Cargo não pertence à instalação atual".to_string());
@@ -430,7 +430,5 @@ async fn get_employee_company_id(
     .await
     .map_err(|e| e.to_string())?;
 
-    row.ok_or_else(|| {
-        "Funcionário não encontrado ou não pertence à instalação atual".to_string()
-    })
+    row.ok_or_else(|| "Funcionário não encontrado ou não pertence à instalação atual".to_string())
 }

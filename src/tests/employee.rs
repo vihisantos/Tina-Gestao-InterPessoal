@@ -7,6 +7,7 @@ use crate::infra::{
     PositionRepository,
 };
 use crate::Database;
+use sqlx;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -17,7 +18,8 @@ async fn setup_test_db(test_name: &str) -> (Database, String) {
         .unwrap()
         .as_nanos();
 
-    let path = std::env::temp_dir().join(format!("tina-employee-test-{}-{}.db", test_name, timestamp));
+    let path =
+        std::env::temp_dir().join(format!("tina-employee-test-{}-{}.db", test_name, timestamp));
     let path_str = path.to_string_lossy().to_string();
 
     let db = Database::open(Path::new(&path))
@@ -59,12 +61,7 @@ async fn setup_organization(db: &crate::Database) -> (String, String, String, St
         .await
         .expect("Failed to create position");
 
-    (
-        installation.id,
-        company.id,
-        dept.id,
-        position.id,
-    )
+    (installation.id, company.id, dept.id, position.id)
 }
 
 #[tokio::test]
@@ -76,7 +73,12 @@ async fn test_employee_create() {
 
     let employee_repo = EmployeeRepository::new(db.pool());
     let employee = employee_repo
-        .create(&position_id, "Funcionário Teste", Some("Responsável por sistemas"), None)
+        .create(
+            &position_id,
+            "Funcionário Teste",
+            Some("Responsável por sistemas"),
+            None,
+        )
         .await
         .expect("Failed to create employee");
 
@@ -93,7 +95,10 @@ async fn test_employee_create() {
         .expect("Failed to check company membership"));
 
     // Validar que o cargo pertence ao departamento da empresa
-    assert!(employee_repo.position_exists_and_active(&position_id).await.expect("Query failed"));
+    assert!(employee_repo
+        .position_exists_and_active(&position_id)
+        .await
+        .expect("Query failed"));
 
     cleanup_test_db(&path);
 }
@@ -114,8 +119,7 @@ async fn test_employee_get() {
     let found = employee_repo
         .find_by_id(&employee.id)
         .await
-        .expect("Failed to find employee")
-        ;
+        .expect("Failed to find employee");
 
     assert_eq!(found.id, employee.id);
     assert_eq!(found.name, "Funcionário Consulta");
@@ -199,7 +203,12 @@ async fn test_employee_update_info() {
         .expect("Failed to create employee");
 
     employee_repo
-        .update_info(&employee.id, &company_id, "Nome Atualizado", Some("Resp atualizada"))
+        .update_info(
+            &employee.id,
+            &company_id,
+            "Nome Atualizado",
+            Some("Resp atualizada"),
+        )
         .await
         .expect("Failed to update employee");
 
@@ -330,7 +339,10 @@ async fn test_employee_change_position_rejects_other_company() {
         .change_position(&employee.id, &company_id, &position_b.id)
         .await;
 
-    assert!(result.is_err(), "Should reject position from another company");
+    assert!(
+        result.is_err(),
+        "Should reject position from another company"
+    );
 
     cleanup_test_db(&path);
 }
@@ -472,7 +484,10 @@ async fn test_employee_deactivate_already_inactive_rejected() {
 
     // Tentar desativar novamente - deve falhar
     let result = employee_repo.deactivate(&employee.id, &company_id).await;
-    assert!(result.is_err(), "Should reject deactivating already inactive employee");
+    assert!(
+        result.is_err(),
+        "Should reject deactivating already inactive employee"
+    );
 
     cleanup_test_db(&path);
 }
@@ -492,7 +507,10 @@ async fn test_employee_reactivate_already_active_rejected() {
 
     // Tentar reativar já ativo - deve falhar
     let result = employee_repo.reactivate(&employee.id, &company_id).await;
-    assert!(result.is_err(), "Should reject reactivating already active employee");
+    assert!(
+        result.is_err(),
+        "Should reject reactivating already active employee"
+    );
 
     cleanup_test_db(&path);
 }
@@ -551,10 +569,16 @@ async fn test_employee_valid_association_company_department_position() {
         .expect("Query failed"));
 
     // Validar que o cargo pertence ao departamento
-    assert!(employee_repo.department_exists_and_active(&dept_id).await.expect("Query failed"));
+    assert!(employee_repo
+        .department_exists_and_active(&dept_id)
+        .await
+        .expect("Query failed"));
 
     // Validar que o cargo está ativo
-    assert!(employee_repo.position_exists_and_active(&position_id).await.expect("Query failed"));
+    assert!(employee_repo
+        .position_exists_and_active(&position_id)
+        .await
+        .expect("Query failed"));
 
     cleanup_test_db(&path);
 }
@@ -569,7 +593,9 @@ async fn test_employee_reject_invalid_position() {
     let employee_repo = EmployeeRepository::new(db.pool());
 
     // Tentar criar funcionário com position_id inexistente - deve falhar
-    let result = employee_repo.create("position-inexistente", "Funcionário", None, None).await;
+    let result = employee_repo
+        .create("position-inexistente", "Funcionário", None, None)
+        .await;
     assert!(result.is_err(), "Should reject invalid position_id");
 
     cleanup_test_db(&path);
@@ -838,6 +864,294 @@ async fn test_employee_deactivated_not_in_active_list() {
         .expect("Failed to list all");
     assert_eq!(all.len(), 1);
     assert!(!all[0].is_active());
+
+    cleanup_test_db(&path);
+}
+
+// ============================================================================
+// TESTES DE REGRESSÃO — Sincronização de status e is_active
+// ============================================================================
+
+/// Regressão: funcionário legado com is_active = 0 continua inativo após
+/// as migrations (backfill de status a partir de is_active).
+#[tokio::test]
+async fn test_employee_legacy_is_active_zero_remains_inactive() {
+    let test_name = "employee_legacy_inactive";
+    let (db, path) = setup_test_db(test_name).await;
+
+    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+
+    // Inserir diretamente um funcionário legado com estado inconsistente:
+    // status = 'active' mas is_active = 0 (simulando registro criado antes
+    // da migration 003/004, onde as colunas podiam divergir)
+    sqlx::query(
+        r#"
+        INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at, deactivated_at)
+        VALUES (?, ?, ?, ?, ?, 'nvidia/nemotron-3.5-bolt-e4b', 'active', 0, datetime('now'), datetime('now'), NULL)
+        "#,
+    )
+    .bind("legacy-employee-id")
+    .bind(&position_id)
+    .bind("Funcionário Legado Inativo")
+    .bind(None::<String>)
+    .bind(None::<String>)
+    .execute(db.pool())
+    .await
+    .expect("Failed to insert legacy employee");
+
+    // Aplicar o backfill manualmente (equivalente ao que a migration 004 faz)
+    sqlx::query(
+        "UPDATE employees SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'inactive' END WHERE status IS NULL OR status = ''",
+    )
+    .execute(db.pool())
+    .await
+    .expect("Failed to backfill status");
+
+    // Sincronizar registros com is_active = 0 para status = 'inactive'
+    sqlx::query(
+        "UPDATE employees SET status = 'inactive' WHERE is_active = 0 AND status <> 'inactive'",
+    )
+    .execute(db.pool())
+    .await
+    .expect("Failed to sync status from is_active");
+
+    let employee_repo = EmployeeRepository::new(db.pool());
+    let found = employee_repo
+        .find_by_id("legacy-employee-id")
+        .await
+        .expect("Failed to find legacy employee");
+
+    // O funcionário legado com is_active = 0 deve ser considerado inativo
+    assert!(
+        !found.is_active(),
+        "Legacy employee with is_active=0 must be inactive"
+    );
+    assert_eq!(
+        found.status,
+        crate::core::employee::EmployeeStatus::Inactive,
+        "Legacy employee status must be Inactive"
+    );
+
+    // Não deve aparecer em listagens de ativos
+    let active = employee_repo
+        .list_by_company(&company_id, false)
+        .await
+        .expect("Failed to list active employees");
+    assert!(
+        !active.iter().any(|e| e.id == "legacy-employee-id"),
+        "Legacy inactive employee must not appear in active list"
+    );
+
+    cleanup_test_db(&path);
+}
+
+/// Regressão: funcionário desativado não aparece na view active_employees.
+#[tokio::test]
+async fn test_employee_deactivated_not_in_active_employees_view() {
+    let test_name = "employee_deactivated_view";
+    let (db, path) = setup_test_db(test_name).await;
+
+    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+
+    let employee_repo = EmployeeRepository::new(db.pool());
+    let employee = employee_repo
+        .create(&position_id, "Funcionário View", None, None)
+        .await
+        .expect("Failed to create employee");
+
+    // Aparece na view antes de desativar
+    let before: Option<String> = sqlx::query_scalar("SELECT id FROM active_employees WHERE id = ?")
+        .bind(&employee.id)
+        .fetch_optional(db.pool())
+        .await
+        .expect("Failed to query active_employees view");
+    assert!(
+        before.is_some(),
+        "Employee must appear in active_employees before deactivation"
+    );
+
+    // Desativar
+    employee_repo
+        .deactivate(&employee.id, &company_id)
+        .await
+        .expect("Failed to deactivate employee");
+
+    // Não aparece mais na view após desativar
+    let after: Option<String> = sqlx::query_scalar("SELECT id FROM active_employees WHERE id = ?")
+        .bind(&employee.id)
+        .fetch_optional(db.pool())
+        .await
+        .expect("Failed to query active_employees view");
+    assert!(
+        after.is_none(),
+        "Deactivated employee must not appear in active_employees view"
+    );
+
+    // Verificar consistência das duas colunas no banco
+    let row: (String, i64, Option<String>) =
+        sqlx::query_as("SELECT status, is_active, deactivated_at FROM employees WHERE id = ?")
+            .bind(&employee.id)
+            .fetch_one(db.pool())
+            .await
+            .expect("Failed to fetch employee row");
+    assert_eq!(row.0, "inactive", "status must be inactive");
+    assert_eq!(row.1, 0, "is_active must be 0");
+    assert!(row.2.is_some(), "deactivated_at must be set");
+
+    cleanup_test_db(&path);
+}
+
+/// Regressão: funcionário desativado não pode ser atribuído como superior.
+#[tokio::test]
+async fn test_employee_deactivated_cannot_be_supervisor() {
+    let test_name = "employee_deactivated_supervisor";
+    let (db, path) = setup_test_db(test_name).await;
+
+    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+
+    let employee_repo = EmployeeRepository::new(db.pool());
+
+    // Criar supervisor e funcionário subordinado
+    let supervisor = employee_repo
+        .create(&position_id, "Supervisor", None, None)
+        .await
+        .expect("Failed to create supervisor");
+    let employee = employee_repo
+        .create(&position_id, "Subordinado", None, None)
+        .await
+        .expect("Failed to create employee");
+
+    // Desativar o supervisor
+    employee_repo
+        .deactivate(&supervisor.id, &company_id)
+        .await
+        .expect("Failed to deactivate supervisor");
+
+    // Tentar atribuir o supervisor desativado como superior do funcionário
+    let result = employee_repo
+        .assign_supervisor(&employee.id, &company_id, Some(&supervisor.id))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Deactivated employee must not be assignable as supervisor"
+    );
+
+    cleanup_test_db(&path);
+}
+
+/// Regressão: funcionário reativado volta a aparecer nas listagens de ativos.
+#[tokio::test]
+async fn test_employee_reactivated_appears_in_active_list() {
+    let test_name = "employee_reactivated_active";
+    let (db, path) = setup_test_db(test_name).await;
+
+    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+
+    let employee_repo = EmployeeRepository::new(db.pool());
+    let employee = employee_repo
+        .create(&position_id, "Funcionário Reativar", None, None)
+        .await
+        .expect("Failed to create employee");
+
+    // Desativar
+    employee_repo
+        .deactivate(&employee.id, &company_id)
+        .await
+        .expect("Failed to deactivate employee");
+
+    let inactive = employee_repo
+        .list_by_company(&company_id, false)
+        .await
+        .expect("Failed to list active after deactivate");
+    assert_eq!(
+        inactive.len(),
+        0,
+        "Deactivated employee must not be in active list"
+    );
+
+    // Reativar
+    employee_repo
+        .reactivate(&employee.id, &company_id)
+        .await
+        .expect("Failed to reactivate employee");
+
+    // Volta a aparecer na listagem de ativos
+    let active = employee_repo
+        .list_by_company(&company_id, false)
+        .await
+        .expect("Failed to list active after reactivate");
+    assert_eq!(
+        active.len(),
+        1,
+        "Reactivated employee must appear in active list"
+    );
+    assert_eq!(active[0].id, employee.id);
+
+    // Verificar consistência das duas colunas
+    let found = employee_repo
+        .find_by_id(&employee.id)
+        .await
+        .expect("Failed to find reactivated employee");
+    assert!(found.is_active(), "Reactivated employee must be active");
+
+    cleanup_test_db(&path);
+}
+
+/// Regressão: as colunas status e is_active permanecem consistentes
+/// após operações de criação, desativação e reativação.
+#[tokio::test]
+async fn test_employee_status_is_active_consistency() {
+    let test_name = "employee_status_consistency";
+    let (db, path) = setup_test_db(test_name).await;
+
+    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+
+    let employee_repo = EmployeeRepository::new(db.pool());
+    let employee = employee_repo
+        .create(&position_id, "Funcionário Consistência", None, None)
+        .await
+        .expect("Failed to create employee");
+
+    // Após criação: status = 'active', is_active = 1
+    let row: (String, i64) = sqlx::query_as("SELECT status, is_active FROM employees WHERE id = ?")
+        .bind(&employee.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("Failed to fetch employee row");
+    assert_eq!(row.0, "active", "status must be active after creation");
+    assert_eq!(row.1, 1, "is_active must be 1 after creation");
+
+    // Após desativação: status = 'inactive', is_active = 0
+    employee_repo
+        .deactivate(&employee.id, &company_id)
+        .await
+        .expect("Failed to deactivate employee");
+
+    let row: (String, i64) = sqlx::query_as("SELECT status, is_active FROM employees WHERE id = ?")
+        .bind(&employee.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("Failed to fetch employee row");
+    assert_eq!(
+        row.0, "inactive",
+        "status must be inactive after deactivation"
+    );
+    assert_eq!(row.1, 0, "is_active must be 0 after deactivation");
+
+    // Após reativação: status = 'active', is_active = 1
+    employee_repo
+        .reactivate(&employee.id, &company_id)
+        .await
+        .expect("Failed to reactivate employee");
+
+    let row: (String, i64) = sqlx::query_as("SELECT status, is_active FROM employees WHERE id = ?")
+        .bind(&employee.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("Failed to fetch employee row");
+    assert_eq!(row.0, "active", "status must be active after reactivation");
+    assert_eq!(row.1, 1, "is_active must be 1 after reactivation");
 
     cleanup_test_db(&path);
 }

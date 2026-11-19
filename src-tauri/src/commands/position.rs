@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tina::infra::{
-    CompanyRepository, DepartmentRepository, InstallationRepository, PositionRepository,
+    CompanyRepository, DepartmentRepository, PositionRepository,
 };
 use tina::TinaApp;
 
@@ -64,12 +64,6 @@ pub async fn list_positions(
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar se o departamento pertence à instalação (via cadeia)
-    let dept = dept_repo
-        .find_by_id(&department_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
     let company_repo = CompanyRepository::new(db.pool());
     let companies = company_repo
         .list_by_installation(&installation_id)
@@ -111,7 +105,6 @@ pub async fn get_position(
 ) -> Result<PositionDto, String> {
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
-    let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -158,12 +151,6 @@ pub async fn create_position(
     let pos_repo = PositionRepository::new(db.pool());
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
-
-    // Verificar se o departamento pertence à instalação (via cadeia)
-    let dept = dept_repo
-        .find_by_id(&request.department_id)
-        .await
-        .map_err(|e| e.to_string())?;
 
     let company_repo = CompanyRepository::new(db.pool());
     let companies = company_repo
@@ -215,46 +202,18 @@ pub async fn update_position(
     let pos_repo = PositionRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
-    let pos = pos_repo
-        .find_by_id(&position_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
-
-    let companies = company_repo
-        .list_by_installation(&installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|c| c.id)
-        .collect::<Vec<_>>();
-
-    let mut found = false;
-    for company_id in companies {
-        if dept_repo
-            .belongs_to_company(&pos.department_id, &company_id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err("Cargo não pertence à instalação atual".to_string());
-    }
-
+    // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
     pos_repo
-        .update_name(&position_id, &request.name)
+        .update_name_with_scope(&position_id, &installation_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
 
     pos_repo
-        .update_description(&position_id, request.description.as_deref())
+        .update_description_with_scope(
+            &position_id,
+            &installation_id,
+            request.description.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -271,39 +230,6 @@ pub async fn archive_position(
     let pos_repo = PositionRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
-    let pos = pos_repo
-        .find_by_id(&position_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
-
-    let companies = company_repo
-        .list_by_installation(&installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|c| c.id)
-        .collect::<Vec<_>>();
-
-    let mut found = false;
-    for company_id in companies {
-        if dept_repo
-            .belongs_to_company(&pos.department_id, &company_id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err("Cargo não pertence à instalação atual".to_string());
-    }
-
     // Verificar se pode ser arquivado
     if !pos_repo
         .can_archive(&position_id)
@@ -313,8 +239,9 @@ pub async fn archive_position(
         return Err("Cargo não pode ser arquivado: ainda possui funcionários ativos".to_string());
     }
 
+    // Arquiva com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
     pos_repo
-        .archive(&position_id)
+        .archive_with_scope(&position_id, &installation_id)
         .await
         .map_err(|e| e.to_string())?;
 

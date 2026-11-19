@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::{CompanyRepository, InstallationRepository};
+use tina::infra::CompanyRepository;
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -112,16 +112,7 @@ pub async fn update_company(
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
-    if !repo
-        .belongs_to_installation(&company_id, &installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err("Empresa não pertence à instalação atual".to_string());
-    }
-
-    repo.update_name(&company_id, &request.name)
+    repo.update_name(&company_id, &installation_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -135,27 +126,20 @@ pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> R
     let repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
+    // Verificar pertencimento à instalação (escopo aplicado no SQL)
     if !repo
-        .belongs_to_installation(&company_id, &installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err("Empresa não pertence à instalação atual".to_string());
-    }
-
-    // Verificar se pode ser arquivada
-    if !repo
-        .can_archive(&company_id)
+        .can_archive_for_installation(&company_id, &installation_id)
         .await
         .map_err(|e| e.to_string())?
     {
         return Err(
-            "Empresa não pode ser arquivada: ainda possui departamentos ativos".to_string(),
+            "Empresa não pode ser arquivada: ainda possui departamentos ativos ou não pertence à instalação".to_string(),
         );
     }
 
-    repo.archive(&company_id).await.map_err(|e| e.to_string())?;
+    repo.archive(&company_id, &installation_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

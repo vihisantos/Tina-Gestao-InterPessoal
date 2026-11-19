@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::{CompanyRepository, DepartmentRepository, InstallationRepository};
+use tina::infra::{CompanyRepository, DepartmentRepository};
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -91,22 +91,10 @@ pub async fn get_department(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Verificar se pertence à instalação (via cadeia)
+    // Verificar se pertence à instalação (via cadeia empresa → departamento)
     let company_repo = CompanyRepository::new(db.pool());
-    // Primeiro verifica se pertence a alguma empresa
-    let belongs_to_any = dept_repo
-        .exists(&dept.id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !belongs_to_any {
-        return Err("Departamento não encontrado".to_string());
-    }
-
-    // Verificar se alguma empresa da instalação tem este departamento
-    let inst_repo = InstallationRepository::new(db.pool());
-    let companies = inst_repo
-        .list_companies(&installation_id)
+    let companies = company_repo
+        .list_by_installation(&installation_id)
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -176,44 +164,18 @@ pub async fn update_department(
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
-    let dept = dept_repo
-        .find_by_id(&department_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let company_repo = CompanyRepository::new(db.pool());
-    let companies = company_repo
-        .list_by_installation(&installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|c| c.id)
-        .collect::<Vec<_>>();
-
-    let mut found = false;
-    for company_id in companies {
-        if dept_repo
-            .belongs_to_company(&department_id, &company_id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err("Departamento não pertence à instalação atual".to_string());
-    }
-
+    // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
     dept_repo
-        .update_name(&department_id, &request.name)
+        .update_name_with_scope(&department_id, &installation_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
 
     dept_repo
-        .update_description(&department_id, request.description.as_deref())
+        .update_description_with_scope(
+            &department_id,
+            &installation_id,
+            request.description.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -230,37 +192,6 @@ pub async fn archive_department(
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
-    // Verificar pertencimento à instalação
-    let dept = dept_repo
-        .find_by_id(&department_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let company_repo = CompanyRepository::new(db.pool());
-    let companies = company_repo
-        .list_by_installation(&installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|c| c.id)
-        .collect::<Vec<_>>();
-
-    let mut found = false;
-    for company_id in companies {
-        if dept_repo
-            .belongs_to_company(&department_id, &company_id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err("Departamento não pertence à instalação atual".to_string());
-    }
-
     // Verificar se pode ser arquivada
     if !dept_repo
         .can_archive(&department_id)
@@ -270,8 +201,9 @@ pub async fn archive_department(
         return Err("Departamento não pode ser arquivado: ainda possui cargos ativos".to_string());
     }
 
+    // Arquiva com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
     dept_repo
-        .archive(&department_id)
+        .archive_with_scope(&department_id, &installation_id)
         .await
         .map_err(|e| e.to_string())?;
 

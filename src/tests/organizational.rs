@@ -736,7 +736,10 @@ async fn test_command_level_isolation() {
 
     // Arquivamentos devem revalidar seus pré-requisitos dentro do próprio UPDATE.
     assert!(company_repo.archive(&comp1.id, &inst1.id).await.is_err());
-    assert!(dept_repo.archive_with_scope(&dept1.id, &inst1.id).await.is_err());
+    assert!(dept_repo
+        .archive_with_scope(&dept1.id, &inst1.id)
+        .await
+        .is_err());
 
     // Escritas e arquivamentos com IDs de outra instalação devem falhar.
     assert!(dept_repo

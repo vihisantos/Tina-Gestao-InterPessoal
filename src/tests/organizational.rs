@@ -728,6 +728,41 @@ async fn test_command_level_isolation() {
         .await
         .expect("Query failed"));
 
+    // Escritas autorizadas na própria instalação devem funcionar.
+    dept_repo
+        .update_name_with_scope(&dept1.id, &inst1.id, "Dept 1 atualizado")
+        .await
+        .expect("A instalação proprietária deve atualizar seu departamento");
+    pos_repo
+        .update_name_with_scope(&pos1.id, &inst1.id, "Cargo 1 atualizado")
+        .await
+        .expect("A instalação proprietária deve atualizar seu cargo");
+
+    // Escritas e arquivamentos com IDs de outra instalação devem falhar.
+    assert!(dept_repo
+        .update_name_with_scope(&dept2.id, &inst1.id, "Acesso indevido")
+        .await
+        .is_err());
+    assert!(dept_repo
+        .archive_with_scope(&dept2.id, &inst1.id)
+        .await
+        .is_err());
+    assert!(pos_repo
+        .update_name_with_scope(&pos2.id, &inst1.id, "Acesso indevido")
+        .await
+        .is_err());
+    assert!(pos_repo
+        .archive_with_scope(&pos2.id, &inst1.id)
+        .await
+        .is_err());
+
+    let dept2_after = dept_repo.find_by_id(&dept2.id).await.expect("Dept 2 deve existir");
+    let pos2_after = pos_repo.find_by_id(&pos2.id).await.expect("Pos 2 deve existir");
+    assert_eq!(dept2_after.name, "Dept 2");
+    assert_eq!(pos2_after.name, "Cargo 2");
+    assert_eq!(dept2_after.status.to_string(), "active");
+    assert_eq!(pos2_after.status.to_string(), "active");
+
     cleanup_test_db(&path);
 }
 

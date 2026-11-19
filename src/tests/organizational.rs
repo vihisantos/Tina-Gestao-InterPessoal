@@ -600,14 +600,33 @@ async fn test_tinaapp_initialization_idempotent() {
         .expect("Company should still exist");
     assert_eq!(company2.name, company.name);
 
+    // Uma configuração com owner_uuid divergente deve falhar de forma fechada.
+    drop(tina2);
+    let mismatched_owner = TinaApp::initialize_at(
+        &db_path,
+        installation_id,
+        "owner-uuid-diferente",
+    )
+    .await;
+    assert!(
+        mismatched_owner.is_err(),
+        "A inicialização não pode aceitar owner_uuid divergente do banco"
+    );
+
+    // Reabrir com a identidade correta para verificar persistência e unicidade.
+    let tina3 = TinaApp::initialize_at(&db_path, installation_id, owner_uuid)
+        .await
+        .expect("A identidade original deve continuar válida");
+
     // Verificar apenas UM registro de instalação
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM installations WHERE id = ?")
         .bind(installation_id)
-        .fetch_one(tina2.database().pool())
+        .fetch_one(tina3.database().pool())
         .await
         .expect("Failed to count");
     assert_eq!(count, 1, "Should have exactly one installation record");
 
+    drop(tina3);
     // Limpar
     let _ = std::fs::remove_file(&db_path);
 }

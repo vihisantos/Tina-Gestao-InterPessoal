@@ -602,12 +602,8 @@ async fn test_tinaapp_initialization_idempotent() {
 
     // Uma configuração com owner_uuid divergente deve falhar de forma fechada.
     drop(tina2);
-    let mismatched_owner = TinaApp::initialize_at(
-        &db_path,
-        installation_id,
-        "owner-uuid-diferente",
-    )
-    .await;
+    let mismatched_owner =
+        TinaApp::initialize_at(&db_path, installation_id, "owner-uuid-diferente").await;
     assert!(
         mismatched_owner.is_err(),
         "A inicialização não pode aceitar owner_uuid divergente do banco"
@@ -760,8 +756,14 @@ async fn test_command_level_isolation() {
         .await
         .is_err());
 
-    let dept2_after = dept_repo.find_by_id(&dept2.id).await.expect("Dept 2 deve existir");
-    let pos2_after = pos_repo.find_by_id(&pos2.id).await.expect("Pos 2 deve existir");
+    let dept2_after = dept_repo
+        .find_by_id(&dept2.id)
+        .await
+        .expect("Dept 2 deve existir");
+    let pos2_after = pos_repo
+        .find_by_id(&pos2.id)
+        .await
+        .expect("Pos 2 deve existir");
     assert_eq!(dept2_after.name, "Dept 2");
     assert_eq!(pos2_after.name, "Cargo 2");
     assert_eq!(dept2_after.status.to_string(), "active");

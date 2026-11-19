@@ -276,6 +276,12 @@ impl<'a> DepartmentRepository<'a> {
             SET status = 'inactive'
             WHERE id = ?
               AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM positions p
+                  WHERE p.department_id = departments.id
+                    AND p.status = 'active'
+              )
               AND EXISTS (
                   SELECT 1
                   FROM companies c

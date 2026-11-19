@@ -190,83 +190,113 @@ impl<'a> DepartmentRepository<'a> {
         Ok(count == 0)
     }
 
-    /// Atualiza o nome do departamento (apenas se pertencer à instalação via empresa)
+    /// Atualiza o nome do departamento com escopo aplicado atomicamente no SQL.
     pub async fn update_name_with_scope(
         &self,
         department_id: &str,
         installation_id: &str,
         new_name: &str,
     ) -> Result<()> {
-        // Primeiro verifica se o departamento pertence a alguma empresa da instalação
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(department_id, &company.id).await? {
-                sqlx::query("UPDATE departments SET name = ? WHERE id = ?")
-                    .bind(new_name)
-                    .bind(department_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Department not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET name = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(new_name)
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Department not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
 
-    /// Atualiza a descrição do departamento (apenas se pertencer à instalação via empresa)
+    /// Atualiza a descrição do departamento com escopo aplicado atomicamente no SQL.
     pub async fn update_description_with_scope(
         &self,
         department_id: &str,
         installation_id: &str,
         new_description: Option<&str>,
     ) -> Result<()> {
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(department_id, &company.id).await? {
-                sqlx::query("UPDATE departments SET description = ? WHERE id = ?")
-                    .bind(new_description)
-                    .bind(department_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Department not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET description = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(new_description)
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Department not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
 
-    /// Arquiva um departamento - apenas se pertencer à instalação via empresa
+    /// Arquiva um departamento com escopo aplicado atomicamente no SQL.
     pub async fn archive_with_scope(
         &self,
         department_id: &str,
         installation_id: &str,
     ) -> Result<()> {
-        let company_repo = crate::infra::CompanyRepository::new(self.pool);
-        let companies = company_repo.list_by_installation(installation_id).await?;
-
-        for company in companies {
-            if self.belongs_to_company(department_id, &company.id).await? {
-                sqlx::query("UPDATE departments SET status = 'inactive' WHERE id = ?")
-                    .bind(department_id)
-                    .execute(self.pool)
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        Err(
-            TinaError::Other("Department not found or doesn't belong to installation".to_string())
-                .into(),
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET status = 'inactive'
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
         )
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "Department not found or doesn't belong to installation".to_string(),
+            )
+            .into());
+        }
+        Ok(())
     }
+
 }

@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::{
-    CompanyRepository, DepartmentRepository, PositionRepository,
-};
+use tina::infra::{CompanyRepository, DepartmentRepository, PositionRepository};
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]

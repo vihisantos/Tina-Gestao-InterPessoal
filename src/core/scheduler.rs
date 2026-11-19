@@ -1,9 +1,9 @@
 //! Task scheduler for Tina Core
 
 use crate::error::Result;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
 
 /// Task priority levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -55,26 +55,26 @@ impl Scheduler {
             running: RwLock::new(HashMap::new()),
         }
     }
-    
+
     /// Schedule a new task.
     pub async fn schedule(&self, task: ScheduledTask) -> Result<()> {
         let mut tasks = self.tasks.write().await;
         tasks.insert(task.id.clone(), task);
         Ok(())
     }
-    
+
     /// Cancel a scheduled task.
     pub async fn cancel(&self, task_id: &str) -> Result<()> {
         let mut tasks = self.tasks.write().await;
         tasks.remove(task_id);
         Ok(())
     }
-    
+
     /// Get next tasks to execute.
     pub async fn next_tasks(&self, limit: usize) -> Vec<ScheduledTask> {
         let tasks = self.tasks.read().await;
         let now = std::time::SystemTime::now();
-        
+
         let mut pending: Vec<_> = tasks
             .values()
             .filter_map(|t| {
@@ -85,7 +85,7 @@ impl Scheduler {
                 }
             })
             .collect();
-        
+
         pending.sort_by_key(|t| t.priority as i32);
         pending.truncate(limit);
         pending

@@ -1,0 +1,6 @@
+[package]
+# This file tells Tauri that bundling is disabled during development.
+# When bundle.active = false, this prevents unnecessary resource compilation.
+
+[tauri]
+bundle = { active = false }

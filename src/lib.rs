@@ -50,12 +50,16 @@ impl TinaApp {
         // Verificar se a instalação do config existe no banco
         // O ID da instalação é o principal-chave (identificador da instalação como um todo)
         // O owner_uuid é o ID do proprietário que criou a instalação
-        if let Some(_existing_installation) = repo.find_by_id(&config.installation_id).await? {
-            // Instalação já existe - tudo certo
+        if let Some(existing_installation) = repo.find_by_id(&config.installation_id).await? {
+            if existing_installation.owner_uuid != config.owner_uuid {
+                return Err(crate::error::TinaError::Other(
+                    "A identidade do proprietário na configuração não corresponde ao registro persistido da instalação. A inicialização foi interrompida para proteger a identidade local.".to_string(),
+                )
+                .into());
+            }
         } else {
-            // Instalação não existe - criar com o ID da configuração
-            let _ = repo
-                .create_with_id("Tina", &config.installation_id, &config.owner_uuid)
+            // Instalação não existe - criar com o ID e proprietário da configuração.
+            repo.create_with_id("Tina", &config.installation_id, &config.owner_uuid)
                 .await?;
         }
 
@@ -93,12 +97,16 @@ impl TinaApp {
         let repo = infra::InstallationRepository::new(database.pool());
 
         // Verificar se a instalação do config existe no banco
-        if let Some(_existing_installation) = repo.find_by_id(&config.installation_id).await? {
-            // Instalação já existe - tudo certo
+        if let Some(existing_installation) = repo.find_by_id(&config.installation_id).await? {
+            if existing_installation.owner_uuid != config.owner_uuid {
+                return Err(crate::error::TinaError::Other(
+                    "A identidade do proprietário na configuração não corresponde ao registro persistido da instalação. A inicialização foi interrompida para proteger a identidade local.".to_string(),
+                )
+                .into());
+            }
         } else {
-            // Instalação não existe - criar com o ID da configuração
-            let _ = repo
-                .create_with_id("Tina", &config.installation_id, &config.owner_uuid)
+            // Instalação não existe - criar com o ID e proprietário da configuração.
+            repo.create_with_id("Tina", &config.installation_id, &config.owner_uuid)
                 .await?;
         }
 

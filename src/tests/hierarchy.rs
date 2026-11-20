@@ -915,9 +915,9 @@ async fn test_deactivated_employee_relation_is_preserved() {
 }
 
 #[tokio::test]
-async fn test_migration_005_preserves_existing_relations() {
+async fn test_migrations_preserve_existing_relations() {
     // Simula um banco legado (001–004) com uma relação já existente e aplica
-    // a migration 005 sobre ele.
+    // as migrations 005 e 006 sobre ele.
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -968,12 +968,15 @@ async fn test_migration_005_preserves_existing_relations() {
             .expect("Failed to seed legacy hierarchy");
     }
 
-    sqlx::raw_sql(include_str!(
-        "../../migration/005_employee_supervisor_history.sql"
-    ))
-    .execute(&pool)
-    .await
-    .expect("Failed to apply migration 005");
+    for migration in [
+        include_str!("../../migration/005_employee_supervisor_history.sql"),
+        include_str!("../../migration/006_employee_assignment_history.sql"),
+    ] {
+        sqlx::raw_sql(migration)
+            .execute(&pool)
+            .await
+            .expect("Failed to apply history migration");
+    }
 
     let relation: Option<String> =
         sqlx::query_scalar("SELECT supervisor_id FROM employees WHERE id = 'legacy-child'")
@@ -988,7 +991,40 @@ async fn test_migration_005_preserves_existing_relations() {
         .expect("Failed to count history");
     assert_eq!(history, 0, "Upgrade must not invent history events");
 
-    // A tabela nova aceita eventos e a relação pode ser alterada.
+    let position: String =
+        sqlx::query_scalar("SELECT position_id FROM employees WHERE id = 'legacy-child'")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to read legacy position");
+    assert_eq!(position, "pos-legacy", "Upgrade must preserve positions");
+
+    let assignment_history: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM employee_assignment_history")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count assignment history");
+    assert_eq!(
+        assignment_history, 0,
+        "Upgrade must not invent assignment events"
+    );
+
+    let immutable_triggers: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM sqlite_master
+        WHERE type = 'trigger' AND name IN (
+            'employee_supervisor_history_reject_update',
+            'employee_supervisor_history_reject_delete',
+            'employee_assignment_history_reject_update',
+            'employee_assignment_history_reject_delete'
+        )
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to count immutability triggers");
+    assert_eq!(immutable_triggers, 4);
+
+    // As tabelas novas aceitam eventos e a relação pode ser alterada.
     let service = HierarchyService::new(&pool);
     service
         .set_supervisor(

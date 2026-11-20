@@ -4,6 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::core::employee::{Employee, EmployeeStatus};
+use crate::core::hierarchy::HierarchyOperation;
 use crate::error::{Result, TinaError};
 
 /// Valor provisório de `model_config` para funcionários criados nesta fase.
@@ -79,6 +80,9 @@ impl<'a> EmployeeRepository<'a> {
     ) -> Result<Employee> {
         let id = Uuid::new_v4().to_string();
 
+        // A criação e o eventual evento inicial de hierarquia são atômicos.
+        let mut tx = self.pool.begin().await?;
+
         sqlx::query(
             r#"
             INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at)
@@ -91,8 +95,23 @@ impl<'a> EmployeeRepository<'a> {
         .bind(responsibilities)
         .bind(supervisor_id)
         .bind(PROVISIONAL_MODEL_CONFIG)
-        .execute(self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        if let Some(supervisor_id) = supervisor_id {
+            super::hierarchy::HierarchyRepository::insert_history(
+                &mut tx,
+                &id,
+                None,
+                Some(supervisor_id),
+                HierarchyOperation::Assigned,
+                None,
+                None,
+            )
+            .await?;
+        }
+
+        tx.commit().await?;
 
         self.find_by_id(&id).await
     }
@@ -379,50 +398,19 @@ impl<'a> EmployeeRepository<'a> {
     }
 
     /// Associar superior direto (relacionamento próprio).
-    /// O superior deve pertencer à mesma empresa.
+    ///
+    /// Delega ao [`crate::infra::HierarchyService`]: valida empresa, estado
+    /// ativo, auto-supervisão e ciclos, e registra histórico na mesma
+    /// transação. Mantido por compatibilidade com chamadores existentes.
     pub async fn assign_supervisor(
         &self,
         employee_id: &str,
         company_id: &str,
         supervisor_id: Option<&str>,
     ) -> Result<()> {
-        // Verificar que o funcionário pertence à empresa
-        if !self.belongs_to_company(employee_id, company_id).await? {
-            return Err(TinaError::Other(
-                "Employee not found or doesn't belong to company".to_string(),
-            )
-            .into());
-        }
-
-        // Se houver supervisor, verificar que ele existe, está ativo e pertence à mesma empresa
-        if let Some(sup_id) = supervisor_id {
-            if sup_id == employee_id {
-                return Err(TinaError::Other(
-                    "Employee cannot be their own supervisor".to_string(),
-                )
-                .into());
-            }
-
-            if !self.is_active_in_company(sup_id, company_id).await? {
-                return Err(TinaError::Other(
-                    "Supervisor not found, inactive, or doesn't belong to the same company"
-                        .to_string(),
-                )
-                .into());
-            }
-        }
-
-        let result = sqlx::query(
-            "UPDATE employees SET supervisor_id = ?, updated_at = datetime('now') WHERE id = ?",
-        )
-        .bind(supervisor_id)
-        .bind(employee_id)
-        .execute(self.pool)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(TinaError::Other("Employee not found".to_string()).into());
-        }
+        crate::infra::HierarchyService::new(self.pool)
+            .set_supervisor(employee_id, company_id, supervisor_id, None, None)
+            .await?;
 
         Ok(())
     }

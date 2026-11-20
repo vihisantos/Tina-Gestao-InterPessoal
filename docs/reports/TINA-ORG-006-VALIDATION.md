@@ -124,4 +124,4 @@ Suíte completa: `cargo test --workspace` → **64 passed; 0 failed** (43 testes
 - A concorrência foi exercitada no processo de teste, não em múltiplos processos do aplicativo desktop.
 - Nenhuma validação de janela Tauri real foi executada; o frontend não foi alterado.
 - Nenhum novo comando IPC foi exposto para consulta de árvore; as consultas existem no serviço/repositório e a árvore pode ser derivada de `list_employees_by_company` (que retorna `supervisor_id`). A exposição administrativa pertence à issue #9.
-- CI do GitHub: será confirmado após o push da branch.
+- **CI do GitHub (run [44827750342](https://github.com/vihisantos/Tina-Gestao-InterPessoal/actions/runs/44827750342)):** governance checks **pass** (5s), Svelte frontend validation **pass** (15s), Rust and Tauri validation (Windows) **pass** (10m45s — fmt, check e testes).

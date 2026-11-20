@@ -97,6 +97,7 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 | `003_employee_status_column.sql` | Adiciona coluna `status` à tabela `employees` (consistente com outras tabelas organizacionais) |
 | `004_employee_status_sync.sql` | Corrige o backfill da migration 003 (`is_active = 0` → `status = 'inactive'`), sincroniza `is_active` com `status` e recria a view `active_employees` |
 | `005_employee_supervisor_history.sql` | Cria o log append-only `employee_supervisor_history` para alterações de superior direto |
+| `006_employee_assignment_history.sql` | Cria o log append-only `employee_assignment_history` (cargo/departamento) e triggers que impedem `UPDATE`/`DELETE` nos dois históricos |
 
 **Fonte de verdade do estado do funcionário:** a coluna `status` (`'active'` / `'inactive'`). A coluna `is_active` é mantida por compatibilidade e sempre sincronizada com `status` em todas as operações de criação, desativação e reativação. A view `active_employees` e a validação de superior (`EmployeeRepository::is_active_in_company`) filtram por `status = 'active'`; nenhuma consulta de funcionário ativo usa `is_active`. O `model_config` gravado na criação (`nvidia/nemotron-3.5-bolt-e4b`) é provisório e não define política de modelos.
 
@@ -119,10 +120,13 @@ superior por subordinado, vários subordinados por superior e profundidade
 variável, então foi preservada como **única fonte de verdade do presente**.
 Não existe tabela espelho da relação atual.
 
-O histórico vive em `employee_supervisor_history`, um log **append-only**:
+O histórico vive em `employee_supervisor_history`, um log **append-only**.
+Desde a migration 006, triggers `BEFORE UPDATE` e `BEFORE DELETE` executam
+`RAISE(ABORT)` e impedem alterar ou apagar eventos; apenas `INSERT` é aceito.
 
 | Campo | Descrição |
 |-------|-----------|
+
 | `employee_id` | Funcionário cuja relação mudou (`ON DELETE RESTRICT`) |
 | `previous_supervisor_id` | Superior anterior, quando havia |
 | `new_supervisor_id` | Novo superior, quando há |
@@ -192,6 +196,41 @@ usado como autor. Quando houver identidade autenticada, o serviço já aceita
 - `company_tree(company, include_inactive)` — árvore da empresa; nós inalcançáveis (dados legados com ciclo) aparecem com `depth = None`.
 - `history(employee, company)` — eventos em ordem cronológica.
 
+### 2.9 Histórico de Movimentação de Cargo/Departamento
+
+A posição **atual** continua em `employees.position_id`; o departamento é
+derivado da cadeia `position → department`. Cada mudança de cargo gera um
+evento em `employee_assignment_history`, preservando a trilha de transferências.
+
+| Campo | Descrição |
+|-------|-----------|
+| `employee_id` | Funcionário movimentado (`ON DELETE RESTRICT`) |
+| `previous_position_id` / `new_position_id` | Cargo anterior e novo (`ON DELETE RESTRICT`) |
+| `previous_department_id` / `new_department_id` | Departamento derivado do cargo anterior e do novo (`ON DELETE RESTRICT`) |
+| `reason` | Motivo opcional informado pelo chamador |
+| `author_id` | Autor, quando houver identidade confiável (hoje `NULL`) |
+| `created_at` | Instante da operação |
+
+Regras aplicadas:
+
+- O novo cargo deve existir, estar ativo e pertencer a um departamento ativo da
+  mesma empresa do funcionário.
+- Cargo e histórico são gravados na mesma transação (`BEGIN IMMEDIATE`); falha
+  em qualquer etapa faz `ROLLBACK`, sem deixar posição sem evento.
+- Solicitar o cargo que o funcionário já ocupa é um **no-op**: nada é gravado e
+  `PositionChange::recorded` retorna `false`.
+- Mesmo quando o cargo muda dentro do mesmo departamento, o evento é registrado
+  com `previous_department_id == new_department_id`.
+- `author_id` segue a mesma limitação da hierarquia: `NULL` sem autenticação por
+  operação; o serviço aceita autor no backend para uso futuro.
+- `AssignmentService::history(employee, company)` retorna os eventos em ordem
+  cronológica e valida o escopo da empresa via funcionário → cargo → departamento.
+- Triggers da migration 006 rejeitam `UPDATE` e `DELETE`; inserções legítimas
+  continuam permitidas.
+
+O comando Tauri `change_employee_position` mantém a superfície existente e
+aceita `reason` opcional (campo aditivo), usando o mesmo serviço transacional.
+
 ---
 
 ## 3. Módulos Rust Auditados
@@ -209,7 +248,10 @@ usado como autor. Quando houver identidade autenticada, o serviço já aceita
 | `src/tests/employee.rs` | Implementado (Missão 005) | 20 testes de integração com SQLite isolado |
 | `src/core/hierarchy.rs` | Implementado (Missão 006) | Tipos de operação, evento histórico, resultado de alteração e nó da árvore |
 | `src/infra/hierarchy.rs` | Implementado (Missão 006) | `HierarchyRepository` (SQL/transação) e `HierarchyService` (regras, ciclos, histórico, consultas) |
-| `src/tests/hierarchy.rs` | Implementado (Missão 006) | 20 testes de integração (relações, ciclos, isolamento, rollback, concorrência, persistência) |
+| `src/core/assignment.rs` | Implementado (Missão 006) | Evento de movimentação e resultado da mudança de cargo/departamento |
+| `src/infra/assignment.rs` | Implementado (Missão 006) | `AssignmentService`: validação, transação atômica e histórico de movimentações |
+| `src/tests/hierarchy.rs` | Implementado (Missão 006) | 21 testes de integração (relações, ciclos, isolamento, rollback, concorrência, persistência, upgrade) |
+| `src/tests/assignment.rs` | Implementado (Missão 006) | 7 testes de movimentação, rollback, escopo, persistência e imutabilidade |
 
 ### 3.2 src-tauri/ (Tauri 2 integration)
 
@@ -217,7 +259,7 @@ usado como autor. Quando houver identidade autenticada, o serviço já aceita
 |---------|--------|-----------|
 | `src-tauri/build.rs` | Implementado | Build script Tauri padrão |
 | `src-tauri/src/main.rs` | Implementado | Entry point Tauri 2, registra commands de funcionários |
-| `src-tauri/src/commands/employee.rs` | Implementado (Missão 005) | 10 commands: create, get, list by company/department, update info/responsibilities, change position, assign supervisor, deactivate, reactivate |
+| `src-tauri/src/commands/employee.rs` | Implementado (Missões 005/006) | 10 commands: create, get, list by company/department, update info/responsibilities, change position (com `reason` opcional), assign supervisor, deactivate, reactivate |
 
 ### 3.3 Placeholder (Estrutura, não compila ou usado)
 
@@ -300,7 +342,9 @@ usado como autor. Quando houver identidade autenticada, o serviço já aceita
 - Ciclos diretos e indiretos bloqueados por CTE recursiva no backend
 - Alteração de relação + histórico atômicos com `BEGIN IMMEDIATE`
 - Isolamento por empresa/instalação e tratamento de funcionários inativos cobertos por testes
-- 20 testes de integração passando (`src/tests/hierarchy.rs`)
+- Histórico de movimentação de cargo/departamento atômico (`employee_assignment_history`, migration 006)
+- Históricos protegidos contra `UPDATE`/`DELETE` por triggers (`RAISE(ABORT)`)
+- 21 testes de hierarquia (`src/tests/hierarchy.rs`) + 7 de movimentação (`src/tests/assignment.rs`)
 
 ### 4.3 Restantes para Fase 2
 

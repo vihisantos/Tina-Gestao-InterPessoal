@@ -1,33 +1,32 @@
 -- Tina Platform — migration 004: sincronização de status de funcionários
 --
--- Objetivo: eliminar a inconsistência entre as colunas `status` e `is_active`
--- da tabela `employees`, garantindo uma única fonte de verdade para o estado
--- do funcionário.
+-- Fonte de verdade: `employees.status` ('active' | 'inactive').
+-- A coluna `is_active` é mantida apenas por compatibilidade e passa a ser um
+-- espelho de `status`.
 --
--- 1. Backfill: preenche `status` a partir de `is_active` para registros
---    existentes criados antes da migration 003, de modo que funcionários
---    legados com `is_active = 0` continuem inativos.
--- 2. Define `status` como fonte de verdade: `is_active` é mantida por
---    compatibilidade e sempre sincronizada com `status`.
--- 3. Recria a view `active_employees` para filtrar por `status = 'active'`,
---   refletindo corretamente o estado atual dos funcionários.
+-- Contexto: a migration 003 adicionou `status` com NOT NULL DEFAULT 'active',
+-- marcando como ativos também os funcionários legados que tinham
+-- `is_active = 0`. Esta migration corrige o backfill sem apagar histórico.
+--
+-- 1. Funcionários legados que ainda estão no valor padrão 'active' da
+--    migration 003 mas tinham `is_active = 0` passam a `status = 'inactive'`.
+-- 2. `is_active` é sincronizada com `status` (somente linhas divergentes).
+-- 3. A view `active_employees` é recriada filtrando por `status = 'active'`.
+--
+-- A partir daqui, criação, desativação e reativação gravam as duas colunas
+-- juntas; nenhum fluxo do aplicativo deve alterar apenas uma delas.
 
--- Backfill: registros existentes herdam o status de is_active
-UPDATE employees
-SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'inactive' END
-WHERE status IS NULL OR status = '';
-
--- Garantir que registros com is_active = 0 tenham status = 'inactive'
+-- 1. Backfill dos funcionários legados inativos.
 UPDATE employees
 SET status = 'inactive'
-WHERE is_active = 0 AND status <> 'inactive';
+WHERE is_active = 0 AND status = 'active';
 
--- Garantir que registros com is_active = 1 tenham status = 'active'
+-- 2. `is_active` espelha `status`.
 UPDATE employees
-SET status = 'active'
-WHERE is_active = 1 AND status <> 'active';
+SET is_active = CASE WHEN status = 'active' THEN 1 ELSE 0 END
+WHERE is_active <> CASE WHEN status = 'active' THEN 1 ELSE 0 END;
 
--- Recriar a view active_employees usando status como fonte de verdade
+-- 3. Recriar a view active_employees usando status como fonte de verdade.
 DROP VIEW IF EXISTS active_employees;
 
 CREATE VIEW IF NOT EXISTS active_employees AS

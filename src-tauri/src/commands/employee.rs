@@ -86,9 +86,18 @@ pub async fn create_employee(
     let position_company =
         get_position_company_and_validate(&db, &request.position_id, &installation_id).await?;
 
-    // Se houver supervisor, validar que pertence à mesma empresa
+    // Se houver supervisor, validar que está ativo e pertence à mesma empresa
     if let Some(sup_id) = &request.supervisor_id {
-        validate_supervisor_belongs_to_company(&db, sup_id, &position_company.company_id).await?;
+        let supervisor_ok = repo
+            .is_active_in_company(sup_id, &position_company.company_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !supervisor_ok {
+            return Err(
+                "Supervisor não encontrado, inativo ou não pertence à mesma empresa".to_string(),
+            );
+        }
     }
 
     let employee = repo
@@ -341,36 +350,6 @@ async fn get_position_company_and_validate(
     }
 
     Ok(PositionCompanyInfo { company_id })
-}
-
-/// Valida que o supervisor existe, está ativo e pertence à mesma empresa
-async fn validate_supervisor_belongs_to_company(
-    db: &tina::Database,
-    supervisor_id: &str,
-    company_id: &str,
-) -> Result<(), String> {
-    let count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM employees e
-        JOIN positions p ON e.position_id = p.id
-        JOIN departments d ON p.department_id = d.id
-        WHERE e.id = ? AND e.is_active = 1 AND d.company_id = ?
-        "#,
-    )
-    .bind(supervisor_id)
-    .bind(company_id)
-    .fetch_one(db.pool())
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if count == 0 {
-        return Err(
-            "Supervisor não encontrado, inativo ou não pertence à mesma empresa".to_string(),
-        );
-    }
-
-    Ok(())
 }
 
 /// Valida que a empresa pertence à instalação

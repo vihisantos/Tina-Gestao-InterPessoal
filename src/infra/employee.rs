@@ -6,6 +6,13 @@ use uuid::Uuid;
 use crate::core::employee::{Employee, EmployeeStatus};
 use crate::error::{Result, TinaError};
 
+/// Valor provisório de `model_config` para funcionários criados nesta fase.
+///
+/// O roteamento e a seleção definitivos de modelos (NVIDIA NIM) pertencem a
+/// uma missão posterior. Este valor apenas satisfaz o `NOT NULL` do schema e
+/// NÃO representa uma política definitiva de modelos.
+const PROVISIONAL_MODEL_CONFIG: &str = "nvidia/nemotron-3.5-bolt-e4b";
+
 /// Representa uma linha de funcionário do banco
 #[derive(sqlx::FromRow, Debug)]
 struct EmployeeRow {
@@ -72,13 +79,10 @@ impl<'a> EmployeeRepository<'a> {
     ) -> Result<Employee> {
         let id = Uuid::new_v4().to_string();
 
-        // model_config é gravado com um valor padrão provisório. O roteamento
-        // e a seleção definitivos de modelo de IA são responsabilidade de uma
-        // missão posterior; este valor apenas satisfaz o NOT NULL do schema.
         sqlx::query(
             r#"
             INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'nvidia/nemotron-3.5-bolt-e4b', 'active', 1, datetime('now'), datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, 'active', 1, datetime('now'), datetime('now'))
             "#,
         )
         .bind(&id)
@@ -86,6 +90,7 @@ impl<'a> EmployeeRepository<'a> {
         .bind(name)
         .bind(responsibilities)
         .bind(supervisor_id)
+        .bind(PROVISIONAL_MODEL_CONFIG)
         .execute(self.pool)
         .await?;
 
@@ -188,6 +193,28 @@ impl<'a> EmployeeRepository<'a> {
             .await?;
 
         Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    /// Verifica se o funcionário está ativo e pertence à empresa informada.
+    ///
+    /// Regra única para validar um superior: `status = 'active'` é o critério
+    /// de atividade; `is_active` só é mantida por compatibilidade.
+    pub async fn is_active_in_company(&self, employee_id: &str, company_id: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            WHERE e.id = ? AND e.status = 'active' AND d.company_id = ?
+            "#,
+        )
+        .bind(employee_id)
+        .bind(company_id)
+        .fetch_one(self.pool)
+        .await?;
+
+        Ok(count > 0)
     }
 
     /// Verifica se o funcionário pertence à empresa informada (via cadeia completa)
@@ -376,21 +403,7 @@ impl<'a> EmployeeRepository<'a> {
                 .into());
             }
 
-            let sup_count: i64 = sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*)
-                FROM employees e
-                JOIN positions p ON e.position_id = p.id
-                JOIN departments d ON p.department_id = d.id
-                WHERE e.id = ? AND e.status = 'active' AND d.company_id = ?
-                "#,
-            )
-            .bind(sup_id)
-            .bind(company_id)
-            .fetch_one(self.pool)
-            .await?;
-
-            if sup_count == 0 {
+            if !self.is_active_in_company(sup_id, company_id).await? {
                 return Err(TinaError::Other(
                     "Supervisor not found, inactive, or doesn't belong to the same company"
                         .to_string(),

@@ -8,6 +8,7 @@ use crate::infra::{
 };
 use crate::Database;
 use sqlx;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -32,6 +33,17 @@ async fn setup_test_db(test_name: &str) -> (Database, String) {
 /// Helper para limpar banco de teste
 fn cleanup_test_db(path: &String) {
     let _ = std::fs::remove_file(path);
+}
+
+/// Aplica o conteúdo de um arquivo de migration em um pool SQLite.
+///
+/// Usado para simular a atualização de uma instalação existente: o schema
+/// antigo é criado primeiro e a migration seguinte é aplicada sobre ele.
+async fn apply_migration_sql(pool: &sqlx::SqlitePool, sql: &str) {
+    sqlx::raw_sql(sql)
+        .execute(pool)
+        .await
+        .expect("Failed to apply migration SQL");
 }
 
 /// Cria instalação, empresa, departamento e cargo para uso nos testes.
@@ -872,77 +884,130 @@ async fn test_employee_deactivated_not_in_active_list() {
 // TESTES DE REGRESSÃO — Sincronização de status e is_active
 // ============================================================================
 
-/// Regressão: funcionário legado com is_active = 0 continua inativo após
-/// as migrations (backfill de status a partir de is_active).
+/// Regressão: a migration 004, aplicada sobre um banco que só tinha as
+/// migrations 001–003, preserva o estado de funcionários legados — quem
+/// tinha `is_active = 0` continua inativo e não aparece em `active_employees`.
 #[tokio::test]
-async fn test_employee_legacy_is_active_zero_remains_inactive() {
-    let test_name = "employee_legacy_inactive";
-    let (db, path) = setup_test_db(test_name).await;
+async fn test_migration_004_backfills_legacy_inactive_employee() {
+    let test_name = "employee_legacy_migration";
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path =
+        std::env::temp_dir().join(format!("tina-employee-test-{}-{}.db", test_name, timestamp));
+    let path_str = path.to_string_lossy().to_string();
 
-    let (_inst_id, company_id, dept_id, position_id) = setup_organization(&db).await;
+    let options = SqliteConnectOptions::new()
+        .filename(&path)
+        .create_if_missing(true)
+        .foreign_keys(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .expect("Failed to open test database");
 
-    // Inserir diretamente um funcionário legado com estado inconsistente:
-    // status = 'active' mas is_active = 0 (simulando registro criado antes
-    // da migration 003/004, onde as colunas podiam divergir)
-    sqlx::query(
-        r#"
-        INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at, deactivated_at)
-        VALUES (?, ?, ?, ?, ?, 'nvidia/nemotron-3.5-bolt-e4b', 'active', 0, datetime('now'), datetime('now'), NULL)
-        "#,
+    // Schema anterior à migration 004: 001 + 002 + 003.
+    apply_migration_sql(&pool, include_str!("../../migration/001_initial.sql")).await;
+    apply_migration_sql(
+        &pool,
+        include_str!("../../migration/002_employee_deactivated_at.sql"),
     )
-    .bind("legacy-employee-id")
-    .bind(&position_id)
-    .bind("Funcionário Legado Inativo")
-    .bind(None::<String>)
-    .bind(None::<String>)
-    .execute(db.pool())
-    .await
-    .expect("Failed to insert legacy employee");
-
-    // Aplicar o backfill manualmente (equivalente ao que a migration 004 faz)
-    sqlx::query(
-        "UPDATE employees SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'inactive' END WHERE status IS NULL OR status = ''",
+    .await;
+    apply_migration_sql(
+        &pool,
+        include_str!("../../migration/003_employee_status_column.sql"),
     )
-    .execute(db.pool())
-    .await
-    .expect("Failed to backfill status");
+    .await;
 
-    // Sincronizar registros com is_active = 0 para status = 'inactive'
+    // Cadeia organizacional mínima.
+    for statement in [
+        "INSERT INTO installations (id, name, root_path, version, owner_uuid) \
+         VALUES ('inst-legacy', 'Legacy', '/tmp/legacy', '0.1.0', 'owner-legacy')",
+        "INSERT INTO companies (id, installation_id, name) \
+         VALUES ('comp-legacy', 'inst-legacy', 'Empresa Legacy')",
+        "INSERT INTO departments (id, company_id, name, code) \
+         VALUES ('dept-legacy', 'comp-legacy', 'Dept Legacy', 'DEPT-LEGACY')",
+        "INSERT INTO positions (id, department_id, name) \
+         VALUES ('pos-legacy', 'dept-legacy', 'Cargo Legacy')",
+    ] {
+        sqlx::query(statement)
+            .execute(&pool)
+            .await
+            .expect("Failed to seed organizational chain");
+    }
+
+    // Funcionários legados: a migration 003 deixou status = 'active' em todos,
+    // mas um deles já estava desativado via is_active = 0.
     sqlx::query(
-        "UPDATE employees SET status = 'inactive' WHERE is_active = 0 AND status <> 'inactive'",
+        "INSERT INTO employees (id, position_id, name, model_config, is_active) \
+         VALUES ('legacy-inactive', 'pos-legacy', 'Legado Inativo', 'nvidia/nemotron-3.5-bolt-e4b', 0)",
     )
-    .execute(db.pool())
+    .execute(&pool)
     .await
-    .expect("Failed to sync status from is_active");
+    .expect("Failed to insert inactive legacy employee");
+    sqlx::query(
+        "INSERT INTO employees (id, position_id, name, model_config, is_active) \
+         VALUES ('legacy-active', 'pos-legacy', 'Legado Ativo', 'nvidia/nemotron-3.5-bolt-e4b', 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("Failed to insert active legacy employee");
 
-    let employee_repo = EmployeeRepository::new(db.pool());
+    apply_migration_sql(
+        &pool,
+        include_str!("../../migration/004_employee_status_sync.sql"),
+    )
+    .await;
+
+    // As duas colunas permanecem consistentes e o legado inativo continua inativo.
+    let legacy_inactive: (String, i64) =
+        sqlx::query_as("SELECT status, is_active FROM employees WHERE id = 'legacy-inactive'")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch legacy inactive employee");
+    assert_eq!(
+        legacy_inactive,
+        ("inactive".to_string(), 0),
+        "Legacy employee with is_active=0 must stay inactive after migration 004"
+    );
+
+    let legacy_active: (String, i64) =
+        sqlx::query_as("SELECT status, is_active FROM employees WHERE id = 'legacy-active'")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch legacy active employee");
+    assert_eq!(
+        legacy_active,
+        ("active".to_string(), 1),
+        "Legacy employee with is_active=1 must stay active after migration 004"
+    );
+
+    // A view reflete o estado atual.
+    let in_view: Option<String> =
+        sqlx::query_scalar("SELECT id FROM active_employees WHERE id = 'legacy-inactive'")
+            .fetch_optional(&pool)
+            .await
+            .expect("Failed to query active_employees view");
+    assert!(
+        in_view.is_none(),
+        "Legacy inactive employee must not appear in active_employees"
+    );
+
+    // O repositório também enxerga o legado como inativo.
+    let employee_repo = EmployeeRepository::new(&pool);
     let found = employee_repo
-        .find_by_id("legacy-employee-id")
+        .find_by_id("legacy-inactive")
         .await
         .expect("Failed to find legacy employee");
-
-    // O funcionário legado com is_active = 0 deve ser considerado inativo
     assert!(
         !found.is_active(),
-        "Legacy employee with is_active=0 must be inactive"
-    );
-    assert_eq!(
-        found.status,
-        crate::core::employee::EmployeeStatus::Inactive,
-        "Legacy employee status must be Inactive"
+        "Repository must expose legacy employee as inactive"
     );
 
-    // Não deve aparecer em listagens de ativos
-    let active = employee_repo
-        .list_by_company(&company_id, false)
-        .await
-        .expect("Failed to list active employees");
-    assert!(
-        !active.iter().any(|e| e.id == "legacy-employee-id"),
-        "Legacy inactive employee must not appear in active list"
-    );
-
-    cleanup_test_db(&path);
+    pool.close().await;
+    cleanup_test_db(&path_str);
 }
 
 /// Regressão: funcionário desativado não aparece na view active_employees.
@@ -1035,6 +1100,15 @@ async fn test_employee_deactivated_cannot_be_supervisor() {
     assert!(
         result.is_err(),
         "Deactivated employee must not be assignable as supervisor"
+    );
+
+    // A mesma regra usada pelo comando Tauri rejeita o superior inativo.
+    assert!(
+        !employee_repo
+            .is_active_in_company(&supervisor.id, &company_id)
+            .await
+            .expect("Failed to check active supervisor"),
+        "Inactive employee must not be considered an active supervisor"
     );
 
     cleanup_test_db(&path);

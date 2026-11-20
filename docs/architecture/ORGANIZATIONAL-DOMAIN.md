@@ -95,9 +95,9 @@ O domínio organizacional da Tina representa a estrutura hierárquica e administ
 |-----------|-----------|
 | `002_employee_deactivated_at.sql` | Adiciona coluna `deactivated_at` à tabela `employees` |
 | `003_employee_status_column.sql` | Adiciona coluna `status` à tabela `employees` (consistente com outras tabelas organizacionais) |
-| `004_employee_status_sync.sql` | Backfill de `status` a partir de `is_active` e recria a view `active_employees` usando `status` como fonte de verdade |
+| `004_employee_status_sync.sql` | Corrige o backfill da migration 003 (`is_active = 0` → `status = 'inactive'`), sincroniza `is_active` com `status` e recria a view `active_employees` |
 
-**Fonte de verdade do estado do funcionário:** a coluna `status` (`'active'` / `'inactive'`). A coluna `is_active` é mantida por compatibilidade e sempre sincronizada com `status` em todas as operações de criação, desativação e reativação. A view `active_employees` filtra por `status = 'active'`.
+**Fonte de verdade do estado do funcionário:** a coluna `status` (`'active'` / `'inactive'`). A coluna `is_active` é mantida por compatibilidade e sempre sincronizada com `status` em todas as operações de criação, desativação e reativação. A view `active_employees` e a validação de superior (`EmployeeRepository::is_active_in_company`) filtram por `status = 'active'`; nenhuma consulta de funcionário ativo usa `is_active`. O `model_config` gravado na criação (`nvidia/nemotron-3.5-bolt-e4b`) é provisório e não define política de modelos.
 
 ### 2.7 Tabelas Adicionais
 

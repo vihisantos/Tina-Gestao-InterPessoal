@@ -65,6 +65,10 @@ pub enum TinaError {
     #[error("validação falhou: {0}")]
     Validation(String),
 
+    /// Violação de regra de hierarquia organizacional.
+    #[error("hierarquia inválida: {0}")]
+    Hierarchy(String),
+
     /// Erro genérico.
     #[error("{0}")]
     Other(String),

@@ -7,6 +7,7 @@
 //! `%APPDATA%\tina\tina.db`.
 
 use std::path::Path;
+use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
@@ -22,10 +23,15 @@ pub struct Database {
 impl Database {
     /// Abre (ou cria) o banco em `path` e aplica as migrations versionadas.
     pub async fn open(path: &Path) -> Result<Self> {
+        // `busy_timeout` faz transações concorrentes esperarem o lock de
+        // escrita em vez de falharem imediatamente. A hierarquia usa
+        // `BEGIN IMMEDIATE`, então esse é o tempo máximo de espera por uma
+        // alteração concorrente antes de o SQLite retornar `SQLITE_BUSY`.
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5))
             .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new()

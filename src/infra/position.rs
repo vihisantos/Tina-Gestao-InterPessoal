@@ -208,7 +208,7 @@ impl<'a> PositionRepository<'a> {
     /// Verifica se cargo pode ser arquivado (sem funcionários ativos)
     pub async fn can_archive(&self, position_id: &str) -> Result<bool> {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM employees WHERE position_id = ? AND is_active = 1",
+            "SELECT COUNT(*) FROM employees WHERE position_id = ? AND status = 'active'",
         )
         .bind(position_id)
         .fetch_one(self.pool)
@@ -329,7 +329,7 @@ impl<'a> PositionRepository<'a> {
                   SELECT 1
                   FROM employees e
                   WHERE e.position_id = positions.id
-                    AND e.is_active = 1
+                    AND e.status = 'active'
               )
               AND EXISTS (
                   SELECT 1

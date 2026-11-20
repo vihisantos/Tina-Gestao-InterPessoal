@@ -3,6 +3,7 @@
 mod company;
 mod db;
 mod department;
+mod employee;
 mod installation;
 mod position;
 mod redis;
@@ -11,6 +12,7 @@ mod telemetry;
 pub use company::*;
 pub use db::*;
 pub use department::*;
+pub use employee::*;
 pub use installation::*;
 pub use position::*;
 pub use redis::*;

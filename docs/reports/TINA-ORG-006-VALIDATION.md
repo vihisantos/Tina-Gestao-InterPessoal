@@ -176,4 +176,4 @@ dados existentes e não inventa eventos históricos.
 - A concorrência foi exercitada no processo de teste, não em múltiplos processos do aplicativo desktop.
 - Nenhuma validação de janela Tauri real foi executada; o frontend não foi alterado.
 - Nenhum novo comando IPC foi exposto para consulta de árvore; as consultas existem no serviço/repositório e a árvore pode ser derivada de `list_employees_by_company` (que retorna `supervisor_id`). A exposição administrativa pertence à issue #9.
-- **CI do GitHub:** run final [44829356603](https://github.com/vihisantos/Tina-Gestao-InterPessoal/actions/runs/44829356603) — governance **pass** (5s), Svelte **pass** (22s), Rust/Tauri Windows **pass** (6m10s). A execução do novo SHA desta rodada de ajustes é registrada na PR #15.
+- **CI do GitHub:** run final [44834589093](https://github.com/vihisantos/Tina-Gestao-InterPessoal/actions/runs/44834589093) — **3/3 jobs aprovados**: governance **success** (13s), Svelte frontend **success** (18s), Rust/Tauri Windows **success** (7m55s).

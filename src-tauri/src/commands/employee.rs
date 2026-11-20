@@ -61,6 +61,8 @@ pub struct UpdateResponsibilitiesRequest {
 #[derive(Debug, Deserialize)]
 pub struct ChangePositionRequest {
     pub position_id: String,
+    /// Motivo opcional da movimentação, registrado no histórico.
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,9 +252,14 @@ pub async fn change_employee_position(
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
 
-    repo.change_position(&employee_id, &company_id, &request.position_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    repo.change_position_with_reason(
+        &employee_id,
+        &company_id,
+        &request.position_id,
+        request.reason.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }

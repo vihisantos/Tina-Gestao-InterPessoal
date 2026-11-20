@@ -344,57 +344,37 @@ impl<'a> EmployeeRepository<'a> {
         Ok(())
     }
 
-    /// Alterar departamento e cargo do funcionário, respeitando consistência organizacional.
+    /// Alterar cargo do funcionário, respeitando consistência organizacional.
     ///
-    /// O novo cargo deve pertencer ao novo departamento, e o departamento deve pertencer à mesma empresa.
+    /// O novo cargo deve pertencer a um departamento ativo da mesma empresa.
+    /// Delega ao [`crate::infra::AssignmentService`], que atualiza o cargo e
+    /// grava o histórico de movimentação na mesma transação. Mantido por
+    /// compatibilidade; para informar motivo, use
+    /// [`Self::change_position_with_reason`].
     pub async fn change_position(
         &self,
         employee_id: &str,
         company_id: &str,
         new_position_id: &str,
     ) -> Result<()> {
-        // Verificar que o funcionário pertence à empresa
-        if !self.belongs_to_company(employee_id, company_id).await? {
-            return Err(TinaError::Other(
-                "Employee not found or doesn't belong to company".to_string(),
-            )
-            .into());
-        }
-
-        // Verificar que o novo cargo existe, está ativo e pertence a um departamento da mesma empresa
-        let count: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*)
-            FROM positions p
-            JOIN departments d ON p.department_id = d.id
-            WHERE p.id = ? AND p.status = 'active' AND d.status = 'active' AND d.company_id = ?
-            "#,
-        )
-        .bind(new_position_id)
-        .bind(company_id)
-        .fetch_one(self.pool)
-        .await?;
-
-        if count == 0 {
-            return Err(TinaError::Other(
-                "Position not found, inactive, or doesn't belong to the same company".to_string(),
-            )
-            .into());
-        }
-
-        let result = sqlx::query(
-            "UPDATE employees SET position_id = ?, updated_at = datetime('now') WHERE id = ?",
-        )
-        .bind(new_position_id)
-        .bind(employee_id)
-        .execute(self.pool)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(TinaError::Other("Employee not found".to_string()).into());
-        }
+        self.change_position_with_reason(employee_id, company_id, new_position_id, None)
+            .await?;
 
         Ok(())
+    }
+
+    /// Alterar cargo com motivo opcional, registrando cargo e departamentos
+    /// anteriores e novos no histórico organizacional.
+    pub async fn change_position_with_reason(
+        &self,
+        employee_id: &str,
+        company_id: &str,
+        new_position_id: &str,
+        reason: Option<&str>,
+    ) -> Result<crate::core::assignment::PositionChange> {
+        crate::infra::AssignmentService::new(self.pool)
+            .change_position(employee_id, company_id, new_position_id, reason, None)
+            .await
     }
 
     /// Associar superior direto (relacionamento próprio).

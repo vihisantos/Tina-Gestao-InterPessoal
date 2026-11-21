@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx;
 use tauri::State;
-use tina::infra::EmployeeRepository;
+use tina::infra::{EmployeeRepository, HierarchyService};
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -61,11 +61,15 @@ pub struct UpdateResponsibilitiesRequest {
 #[derive(Debug, Deserialize)]
 pub struct ChangePositionRequest {
     pub position_id: String,
+    /// Motivo opcional da movimentação, registrado no histórico.
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AssignSupervisorRequest {
     pub supervisor_id: Option<String>,
+    /// Motivo opcional da alteração, registrado no histórico.
+    pub reason: Option<String>,
 }
 
 fn get_installation_id(state: &TinaApp) -> String {
@@ -248,14 +252,23 @@ pub async fn change_employee_position(
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
 
-    repo.change_position(&employee_id, &company_id, &request.position_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    repo.change_position_with_reason(
+        &employee_id,
+        &company_id,
+        &request.position_id,
+        request.reason.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
-/// Associa (ou remove) um superior direto ao funcionário
+/// Associa (ou remove) um superior direto ao funcionário.
+///
+/// Validação de empresa, estado ativo e ciclos, além do registro de histórico,
+/// acontece no `HierarchyService` (backend). O frontend não é fonte de
+/// autorização; a empresa é derivada do funcionário na instalação atual.
 #[tauri::command]
 pub async fn assign_employee_supervisor(
     state: State<'_, TinaApp>,
@@ -263,12 +276,19 @@ pub async fn assign_employee_supervisor(
     request: AssignSupervisorRequest,
 ) -> Result<(), String> {
     let db = state.database();
-    let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
 
-    repo.assign_supervisor(&employee_id, &company_id, request.supervisor_id.as_deref())
+    HierarchyService::new(db.pool())
+        .set_supervisor(
+            &employee_id,
+            &company_id,
+            request.supervisor_id.as_deref(),
+            request.reason.as_deref(),
+            // Sem identidade autenticada por operação neste contexto local.
+            None,
+        )
         .await
         .map_err(|e| e.to_string())?;
 

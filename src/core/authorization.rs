@@ -12,7 +12,9 @@ pub enum Actor {
     Owner,
     /// Funcionário autenticado, vinculado a uma empresa.
     Employee {
+        /// Identificador do funcionário resolvido no backend.
         employee_id: String,
+        /// Empresa à qual o funcionário autenticado pertence.
         company_id: String,
     },
 }

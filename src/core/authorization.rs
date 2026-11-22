@@ -199,7 +199,7 @@ mod tests {
             Operation::Read,
             ResourceScope {
                 installation_id: "installation-a",
-                company_id: None
+                company_id: None,
             }
         )
         .is_err());

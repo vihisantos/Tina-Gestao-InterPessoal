@@ -4,6 +4,7 @@
 //! e coordenar as operações entre eles.
 
 pub mod assignment;
+pub mod authorization;
 pub mod company;
 pub mod department;
 pub mod employee;

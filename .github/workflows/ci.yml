@@ -1,13 +1,13 @@
-# Verificação mínima e honesta para este estágio do projeto.
-# O que existe: governança em texto. O que não existe: código, testes, dependências.
-# Cada passo verifica algo real; nenhum passo simula resultado.
+# CI por responsabilidade. Formatação, governança e frontend rodam em paralelo.
+# A compilação Rust depende da formatação; testes dependem da compilação.
+# Pull requests empilhados também são validados nas respectivas branches-base.
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: ['**']
 
 permissions:
   contents: read
@@ -64,24 +64,42 @@ jobs:
           done < <(git ls-files -z; git diff --cached --name-only --diff-filter=ACMR -z)
           [ "$hits" -eq 0 ]
 
-  rust-and-tauri:
-    name: Rust and Tauri validation (Windows)
+  rust-format:
+    name: Rust formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  rust-check:
+    name: Rust and Tauri compilation (Windows)
+    needs: rust-format
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install stable Rust and rustfmt
+      - name: Install stable Rust
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup toolchain install stable --profile minimal
           rustup default stable
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
       - name: Check workspace
         run: cargo check --workspace
 
+  rust-tests:
+    name: Rust and Tauri tests (Windows)
+    needs: rust-check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
       - name: Run workspace tests
         run: cargo test --workspace
 

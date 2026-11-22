@@ -11,7 +11,10 @@ pub enum Actor {
     /// Proprietário autenticado da instalação.
     Owner,
     /// Funcionário autenticado, vinculado a uma empresa.
-    Employee { employee_id: String, company_id: String },
+    Employee {
+        employee_id: String,
+        company_id: String,
+    },
 }
 
 /// Contexto de autorização obtido de uma fonte confiável no backend.
@@ -26,7 +29,10 @@ impl ActorContext {
     ///
     /// Esta API não autentica o chamador. Nunca a invoque com valores do IPC.
     pub(crate) fn verified(installation_id: String, actor: Actor) -> Self {
-        Self { installation_id, actor }
+        Self {
+            installation_id,
+            actor,
+        }
     }
 
     /// Identificador da instalação de origem.
@@ -111,67 +117,101 @@ mod tests {
     fn employee() -> ActorContext {
         ActorContext::verified(
             "installation-a".into(),
-            Actor::Employee { employee_id: "employee-a".into(), company_id: "company-a".into() },
+            Actor::Employee {
+                employee_id: "employee-a".into(),
+                company_id: "company-a".into(),
+            },
         )
     }
 
     fn scope<'a>(installation: &'a str, company: &'a str) -> ResourceScope<'a> {
-        ResourceScope { installation_id: installation, company_id: Some(company) }
+        ResourceScope {
+            installation_id: installation,
+            company_id: Some(company),
+        }
     }
 
     #[test]
     fn owner_can_manage_multiple_companies() {
         for company in ["company-a", "company-b"] {
             assert!(AuthorizationPolicy::authorize(
-                &owner(), Operation::ManageHierarchy, scope("installation-a", company)
-            ).is_ok());
+                &owner(),
+                Operation::ManageHierarchy,
+                scope("installation-a", company)
+            )
+            .is_ok());
         }
     }
 
     #[test]
     fn owner_cannot_cross_installations() {
         assert!(AuthorizationPolicy::authorize(
-            &owner(), Operation::Read, scope("installation-b", "company-a")
-        ).is_err());
+            &owner(),
+            Operation::Read,
+            scope("installation-b", "company-a")
+        )
+        .is_err());
     }
 
     #[test]
     fn employee_reads_only_own_company() {
         assert!(AuthorizationPolicy::authorize(
-            &employee(), Operation::Read, scope("installation-a", "company-a")
-        ).is_ok());
+            &employee(),
+            Operation::Read,
+            scope("installation-a", "company-a")
+        )
+        .is_ok());
         assert!(AuthorizationPolicy::authorize(
-            &employee(), Operation::Read, scope("installation-a", "company-b")
-        ).is_err());
+            &employee(),
+            Operation::Read,
+            scope("installation-a", "company-b")
+        )
+        .is_err());
         assert!(AuthorizationPolicy::authorize(
-            &employee(), Operation::Read, scope("installation-b", "company-a")
-        ).is_err());
+            &employee(),
+            Operation::Read,
+            scope("installation-b", "company-a")
+        )
+        .is_err());
     }
 
     #[test]
     fn employee_cannot_escalate_permissions() {
         for operation in [
-            Operation::Write, Operation::ManageHierarchy,
-            Operation::ManagePermissions, Operation::ChangeOwner,
+            Operation::Write,
+            Operation::ManageHierarchy,
+            Operation::ManagePermissions,
+            Operation::ChangeOwner,
         ] {
             assert!(AuthorizationPolicy::authorize(
-                &employee(), operation, scope("installation-a", "company-a")
-            ).is_err());
+                &employee(),
+                operation,
+                scope("installation-a", "company-a")
+            )
+            .is_err());
         }
     }
 
     #[test]
     fn no_global_access_for_employee() {
         assert!(AuthorizationPolicy::authorize(
-            &employee(), Operation::Read,
-            ResourceScope { installation_id: "installation-a", company_id: None }
-        ).is_err());
+            &employee(),
+            Operation::Read,
+            ResourceScope {
+                installation_id: "installation-a",
+                company_id: None
+            }
+        )
+        .is_err());
     }
 
     #[test]
     fn owner_change_requires_dedicated_flow() {
         assert!(AuthorizationPolicy::authorize(
-            &owner(), Operation::ChangeOwner, scope("installation-a", "company-a")
-        ).is_err());
+            &owner(),
+            Operation::ChangeOwner,
+            scope("installation-a", "company-a")
+        )
+        .is_err());
     }
 }

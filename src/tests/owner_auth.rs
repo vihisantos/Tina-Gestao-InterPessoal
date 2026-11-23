@@ -70,5 +70,24 @@ async fn windows_vault_creates_256_bit_key_and_requires_password_after_restart()
         .await
         .unwrap();
     assert_eq!(entry.get_password().unwrap(), key);
+
+    // Uma chave diferente, mas com 64 dígitos hexadecimais, não é válida.
+    entry.set_password(&"ab".repeat(32)).unwrap();
+    reopened.lock_owner().unwrap();
+    assert!(reopened.sign_in_owner("UmaSenhaForteLocal-2026!").await.is_err());
+    assert!(reopened.require_owner(Operation::Read).is_err());
+    entry.set_password(&key).unwrap();
+    reopened.sign_in_owner("UmaSenhaForteLocal-2026!").await.unwrap();
+
+    // Bloqueio temporário deve persistir no SQLite entre instâncias.
+    reopened.lock_owner().unwrap();
+    for _ in 0..5 {
+        assert!(reopened.sign_in_owner("uma-senha-errada").await.is_err());
+    }
+    assert!(reopened.sign_in_owner("UmaSenhaForteLocal-2026!").await.is_err());
+    drop(reopened);
+    let another = TinaApp::initialize_at(&path, &identity, "owner-id").await.unwrap();
+    assert!(another.sign_in_owner("UmaSenhaForteLocal-2026!").await.is_err());
+    assert!(another.require_owner(Operation::Read).is_err());
     entry.delete_credential().unwrap();
 }

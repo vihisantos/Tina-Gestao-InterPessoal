@@ -191,6 +191,58 @@ async fn ensure_backup(pool: &SqlitePool, installation_id: &str, password: &str)
     Ok(())
 }
 
+/// Evita autenticar com uma chave do cofre trocada, ainda que seja 64 hex.
+async fn verify_vault_matches_backup(
+    pool: &SqlitePool,
+    installation_id: &str,
+    password: &str,
+) -> Result<()> {
+    let row: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT salt, nonce, ciphertext FROM owner_key_recovery WHERE installation_id = ?",
+    )
+    .bind(installation_id)
+    .fetch_optional(pool)
+    .await?;
+    let (salt, nonce, ciphertext) =
+        row.ok_or_else(|| TinaError::Auth("backup da chave ausente".into()))?;
+
+    let wrapped = WrappedKey {
+        salt,
+        nonce,
+        ciphertext,
+    };
+    let mut expected = key_recovery::unwrap(password, installation_id, &wrapped)?;
+    #[cfg(windows)]
+    {
+        let observed = vault_entry(installation_id)?
+            .get_password()
+            .map_err(|_| TinaError::Auth("chave do cofre indisponível".into()))?;
+        if observed.len() != 64 {
+            expected.fill(0);
+            return Err(TinaError::Auth("chave do cofre inválida".into()));
+        }
+        // Comparação uniforme, sem retornar a chave ao frontend.
+        let mut difference = 0u8;
+        for (idx, byte) in expected.iter().enumerate() {
+            let ascii = b"0123456789abcdef";
+            difference |= observed.as_bytes()[idx * 2] ^ ascii[(byte >> 4) as usize];
+            difference |= observed.as_bytes()[idx * 2 + 1] ^ ascii[(byte & 0x0f) as usize];
+        }
+        expected.fill(0);
+        if difference != 0 {
+            return Err(TinaError::Auth(
+                "a chave do cofre não corresponde ao backup autenticado".into(),
+            ));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        expected.fill(0);
+        return Err(TinaError::Auth("cofre Windows indisponível".into()));
+    }
+    Ok(())
+}
+
 impl OwnerAccess {
     /// Lê estado público da conta e verifica a validade da sessão local.
     pub async fn status(
@@ -347,6 +399,7 @@ impl OwnerAccess {
             return Err(TinaError::Auth("chave inválida no cofre do Windows".into()));
         }
         ensure_backup(pool, installation_id, password).await?;
+        verify_vault_matches_backup(pool, installation_id, password).await?;
 
         sqlx::query(
             "UPDATE owner_accounts SET failed_attempts = 0, locked_until = 0 WHERE installation_id = ?",
@@ -412,6 +465,18 @@ mod tests {
         assert!(first.starts_with("$argon2id$"));
         assert!(password_matches("senha-super-forte-123", &first));
         assert!(!password_matches("errada", &first));
+    }
+
+    #[test]
+    fn expired_session_fails_closed_and_revokes_access() {
+        let access = OwnerAccess::default();
+        {
+            let mut session = access.session.lock().unwrap();
+            session.unlocked = true;
+            session.expires_at = Some(Instant::now() - Duration::from_millis(1));
+        }
+        assert!(!access.is_unlocked().unwrap());
+        assert!(!access.session.lock().unwrap().unlocked);
     }
 
     #[test]

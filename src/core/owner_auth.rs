@@ -410,7 +410,9 @@ impl OwnerAccess {
 
         // Sessão sem expiração é proibida, inclusive por configuração inválida.
         if timeout_seconds == 0 {
-            return Err(TinaError::Auth("duração de sessão deve ser positiva".into()));
+            return Err(TinaError::Auth(
+                "duração de sessão deve ser positiva".into(),
+            ));
         }
         let expiry = Instant::now()
             .checked_add(Duration::from_secs(timeout_seconds))

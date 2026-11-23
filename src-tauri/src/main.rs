@@ -24,12 +24,21 @@ struct BootstrapInfo {
 /// Retorna o estado real da instalação Tina.
 #[tauri::command]
 fn bootstrap(app: State<'_, TinaApp>) -> Result<BootstrapInfo, String> {
+    let authenticated = app.owner_unlocked().map_err(|e| e.to_string())?;
     Ok(BootstrapInfo {
         version: tina::VERSION.to_string(),
-        database_path: app.config().database_path.to_string_lossy().into_owned(),
+        database_path: if authenticated {
+            app.config().database_path.to_string_lossy().into_owned()
+        } else {
+            "Protegido até o login".into()
+        },
         database_ready: true,
         message: "Tina inicializada localmente".to_string(),
-        installation_id: app.config().installation_id.clone(),
+        installation_id: if authenticated {
+            app.config().installation_id.clone()
+        } else {
+            String::new()
+        },
     })
 }
 
@@ -56,6 +65,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             ping,
+            commands::owner_status,
+            commands::create_owner_account,
+            commands::sign_in_owner,
+            commands::lock_owner,
             commands::list_companies,
             commands::get_company,
             commands::create_company,

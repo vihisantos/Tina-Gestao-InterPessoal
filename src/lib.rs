@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::error::Result;
+use crate::core::authorization::{Actor, ActorContext, AuthorizationPolicy, Operation, ResourceScope};
+use crate::core::owner_auth::{OwnerAccess, OwnerAccountStatus};
 
 pub mod config;
 pub mod core;
@@ -33,6 +35,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct TinaApp {
     config: Arc<AppConfig>,
     database: Database,
+    owner_access: Arc<OwnerAccess>,
 }
 
 impl TinaApp {
@@ -63,7 +66,11 @@ impl TinaApp {
                 .await?;
         }
 
-        Ok(Self { config, database })
+        Ok(Self {
+            config,
+            database,
+            owner_access: Arc::new(OwnerAccess::default()),
+        })
     }
 
     /// Initialize TinaApp at a specific path (for testing).
@@ -110,7 +117,71 @@ impl TinaApp {
                 .await?;
         }
 
-        Ok(Self { config, database })
+        Ok(Self {
+            config,
+            database,
+            owner_access: Arc::new(OwnerAccess::default()),
+        })
+    }
+
+    /// Consulta se existe cadastro inicial e se a sessão está desbloqueada.
+    pub async fn owner_status(&self) -> Result<OwnerAccountStatus> {
+        self.owner_access
+            .status(self.database.pool(), &self.config.installation_id)
+            .await
+    }
+
+    /// Cadastra conta inicial e gera a chave no cofre do Windows.
+    pub async fn create_owner_account(&self, name: &str, password: &str) -> Result<()> {
+        self.owner_access
+            .create_account(
+                self.database.pool(),
+                &self.config.installation_id,
+                &self.config.owner_uuid,
+                name,
+                password,
+            )
+            .await
+    }
+
+    /// Autentica o proprietário por senha e verifica a chave protegida no vault.
+    pub async fn sign_in_owner(&self, password: &str) -> Result<()> {
+        self.owner_access
+            .sign_in(
+                self.database.pool(),
+                &self.config.installation_id,
+                password,
+                self.config.security.session_timeout_seconds,
+                self.config.security.max_login_attempts,
+                self.config.security.lockout_duration_seconds,
+            )
+            .await
+    }
+
+    /// Encerra a sessão autenticada.
+    pub fn lock_owner(&self) -> Result<()> {
+        self.owner_access.lock()
+    }
+
+    /// Verifica a sessão de proprietário, sem expor o segredo.
+    pub fn owner_unlocked(&self) -> Result<bool> {
+        self.owner_access.is_unlocked()
+    }
+
+    /// Exige sessão de proprietário para toda ação administrativa.
+    pub fn require_owner(&self, operation: Operation) -> Result<()> {
+        if !self.owner_access.is_unlocked()? {
+            return Err(TinaError::Unauthorized("sessão do proprietário bloqueada".into()));
+        }
+        let context = ActorContext::verified(self.config.installation_id.clone(), Actor::Owner);
+        AuthorizationPolicy::authorize(
+            &context,
+            operation,
+            ResourceScope {
+                installation_id: &self.config.installation_id,
+                company_id: None,
+            },
+        )
     }
 
     /// Configuração carregada da instalação.

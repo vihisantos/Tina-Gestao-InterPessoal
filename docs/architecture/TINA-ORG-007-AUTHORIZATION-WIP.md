@@ -1,21 +1,25 @@
-# TINA-ORG-007 — autorização: implementação incremental
+# TINA-ORG-007 — autenticação local do proprietário (em andamento)
 
-## Entregue nesta branch
-- Política Rust `AuthorizationPolicy` com negação por padrão.
-- Contexto `ActorContext` não desserializável, com construtor restrito ao crate.
-- Proprietário pode consultar/administrar recursos de qualquer empresa **da mesma instalação**.
-- Funcionário só pode consultar recursos de sua própria empresa; escrita e administração negadas até concessões explícitas.
-- Alteração do proprietário bloqueada até fluxo dedicado.
-- Seis testes unitários de escopo e escalada.
+## Esta branch implementa
+- Cadastro inicial de uma conta local de proprietário por instalação.
+- Hash Argon2id com salt criptograficamente aleatório para a senha de login.
+- Geração de chave independente de 256 bits, guardada no Windows Credential Manager.
+- Sessão em memória com expiração e bloqueio automático por tentativas inválidas.
+- Tela inicial de cadastro, login e encerramento de sessão em SvelteKit.
+- 25 comandos IPC organizacionais bloqueados até login do proprietário.
+- Identidade do proprietário validada no backend (não aceitar UUIDs da UI).
+- Os dados ficam no dispositivo; não existe serviço externo de login.
 
-## PENDÊNCIAS — não considerar esta issue concluída
-1. Implementar autenticação local real e resolver identidade confiável por operação; UUID do config não é credencial.
-2. Integrar o verificador a **todos** os comandos Tauri e serviços/repositórios protegidos; hoje a política é isolada.
-3. Criar permissões granulares persistidas e mecanismos de concessão/revogação.
-4. Auditar decisões negadas e operações sensíveis (issue #8).
-5. Adicionar testes de integração SQLite/IPC e executar CI.
+## Ainda não concluído
+1. Permissões granulares de funcionários de IA, concessão e revogação persistidas.
+2. Política de autorização integrada também nos serviços e repositórios.
+3. Auditoria transacional das operações sensíveis (issue #8).
+4. Testes automatizados de IPC e integração com Windows Credential Manager real.
+5. Política de recuperação e exportação de chave e revisão de segurança.
 
-## Segurança
-**NÃO** instanciar `ActorContext::verified` a partir de `company_id`, `employee_id` ou `owner_uuid` recebidos do frontend. Não há sessão autenticada nesta etapa. A política é uma fundação, não uma barreira ativa nos comandos existentes.
-
-Nenhum provedor de IA, backend remoto, HTTP server ou instalador foi adicionado.
+## Limites de segurança
+- O SQLite AINDA NÃO É CRIPTOGRAFADO. A chave do vault é uma reserva para futura feature de criptografia do banco.
+- O cofre pertence ao perfil do Windows. Perder perfil/cofre pode perder a chave; precisa haver recuperação antes de uso real com banco criptografado.
+- Uma pessoa com acesso à sessão do Windows antes do primeiro cadastro pode registrar a conta inicial.
+- Ameaças do próprio perfil Windows e alterações diretas ao arquivo SQLite ainda estão fora das garantias desta implementação.
+- Não fazer merge da PR enquanto a autorização completa e os testes ainda estiverem pendentes.

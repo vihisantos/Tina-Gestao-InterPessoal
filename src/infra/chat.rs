@@ -52,6 +52,37 @@ pub(crate) async fn create_session(
     .await?)
 }
 
+/// Renomeia uma conversa somente dentro da instalação autenticada.
+pub(crate) async fn rename_session(
+    pool: &SqlitePool,
+    installation: &str,
+    session: &str,
+    title: &str,
+) -> Result<ChatSession> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 120 {
+        return Err(TinaError::Other("título inválido".into()));
+    }
+    let result = sqlx::query(
+        "UPDATE chat_sessions SET title = ?, updated_at = datetime('now') WHERE id = ? AND installation_id = ?",
+    )
+    .bind(title)
+    .bind(session)
+    .bind(installation)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() != 1 {
+        return Err(TinaError::Unauthorized("conversa fora da instalação ou inexistente".into()));
+    }
+    Ok(sqlx::query_as(
+        "SELECT id, title, created_at FROM chat_sessions WHERE id = ? AND installation_id = ?",
+    )
+    .bind(session)
+    .bind(installation)
+    .fetch_one(pool)
+    .await?)
+}
+
 pub(crate) async fn list_sessions(
     pool: &SqlitePool,
     installation: &str,

@@ -82,10 +82,9 @@ pub async fn create_employee(
     state: State<'_, TinaApp>,
     request: CreateEmployeeRequest,
 ) -> Result<EmployeeDto, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -126,10 +125,9 @@ pub async fn get_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<EmployeeDto, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Read)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -155,10 +153,9 @@ pub async fn list_employees_by_company(
     state: State<'_, TinaApp>,
     company_id: String,
 ) -> Result<Vec<EmployeeDto>, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Read)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -181,10 +178,9 @@ pub async fn list_employees_by_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<Vec<EmployeeDto>, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Read)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -208,10 +204,9 @@ pub async fn update_employee(
     employee_id: String,
     request: UpdateEmployeeRequest,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -237,10 +232,9 @@ pub async fn update_employee_responsibilities(
     employee_id: String,
     request: UpdateResponsibilitiesRequest,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -264,10 +258,9 @@ pub async fn change_employee_position(
     employee_id: String,
     request: ChangePositionRequest,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -296,10 +289,9 @@ pub async fn assign_employee_supervisor(
     employee_id: String,
     request: AssignSupervisorRequest,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::ManageHierarchy)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::ManageHierarchy)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
@@ -325,10 +317,9 @@ pub async fn deactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -347,10 +338,9 @@ pub async fn reactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let repo = EmployeeRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 

@@ -17,6 +17,8 @@ async fn owner_is_locked_before_registration_and_weak_password_is_rejected() {
     assert_eq!(status.display_name, None);
     assert!(app.require_owner(Operation::Read).is_err());
     assert!(app.require_owner(Operation::Write).is_err());
+    assert!(app.owner_database(Operation::Read).is_err());
+    assert!(app.owner_database(Operation::Write).is_err());
     assert!(app.create_owner_account("A", "123").await.is_err());
     assert!(!app.owner_status().await.unwrap().configured);
     assert!(app.sign_in_owner("123").await.is_err());
@@ -41,6 +43,7 @@ async fn windows_vault_creates_256_bit_key_and_requires_password_after_restart()
     assert!(app.require_owner(Operation::Read).is_err());
     app.sign_in_owner("UmaSenhaForteLocal-2026!").await.unwrap();
     assert!(app.require_owner(Operation::Write).is_ok());
+    assert!(app.owner_database(Operation::Write).is_ok());
     assert!(app.require_owner(Operation::ChangeOwner).is_err());
 
     let entry = keyring::Entry::new("Tina/owner/database-key/v1", &identity).unwrap();
@@ -49,6 +52,7 @@ async fn windows_vault_creates_256_bit_key_and_requires_password_after_restart()
     assert!(key.bytes().all(|byte| byte.is_ascii_hexdigit()));
     app.lock_owner().unwrap();
     assert!(!app.owner_unlocked().unwrap());
+    assert!(app.owner_database(Operation::Read).is_err());
 
     drop(app);
     let reopened = TinaApp::initialize_at(&path, &identity, "owner-id")

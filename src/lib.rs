@@ -40,6 +40,22 @@ pub struct TinaApp {
     owner_access: Arc<OwnerAccess>,
 }
 
+
+/// Acesso temporário aos repositórios da instalação, entregue somente após
+/// autenticação do proprietário. Não armazene este escopo entre operações.
+#[derive(Debug)]
+pub struct AuthorizedOwnerDatabase<'a> {
+    database: &'a Database,
+}
+
+impl<'a> AuthorizedOwnerDatabase<'a> {
+    /// Pool SQLite da instalação para uma operação previamente autorizada.
+    /// Os repositórios não devem receber pools diretamente de entradas IPC.
+    pub fn pool(&self) -> &'a sqlx::SqlitePool {
+        self.database.pool()
+    }
+}
+
 impl TinaApp {
     /// Carrega configuração, garante os diretórios locais, abre/cria o SQLite
     /// aplica as migrations e garante que a instalação exista no banco.
@@ -193,8 +209,18 @@ impl TinaApp {
         &self.config
     }
 
-    /// Banco de dados local já inicializado.
-    pub fn database(&self) -> &Database {
+    /// Abre acesso ao banco da instalação somente após autorização do
+    /// proprietário no backend. Os comandos Tauri usam apenas esta API.
+    pub fn owner_database(&self, operation: Operation) -> Result<AuthorizedOwnerDatabase<'_>> {
+        self.require_owner(operation)?;
+        Ok(AuthorizedOwnerDatabase {
+            database: &self.database,
+        })
+    }
+
+    /// Acesso direto ao banco exclusivamente para testes internos.
+    #[cfg(test)]
+    pub(crate) fn database(&self) -> &Database {
         &self.database
     }
 }

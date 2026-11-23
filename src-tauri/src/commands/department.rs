@@ -54,10 +54,9 @@ pub async fn list_departments(
     state: State<'_, TinaApp>,
     company_id: String,
 ) -> Result<Vec<DepartmentDto>, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Read)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
@@ -85,10 +84,9 @@ pub async fn get_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<DepartmentDto, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Read)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -132,10 +130,9 @@ pub async fn create_department(
     state: State<'_, TinaApp>,
     request: CreateDepartmentRequest,
 ) -> Result<DepartmentDto, String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let dept_repo = DepartmentRepository::new(db.pool());
     let company_repo = CompanyRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
@@ -169,10 +166,9 @@ pub async fn update_department(
     department_id: String,
     request: UpdateDepartmentRequest,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 
@@ -200,10 +196,9 @@ pub async fn archive_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<(), String> {
-    state
-        .require_owner(tina::core::authorization::Operation::Write)
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let db = state.database();
     let dept_repo = DepartmentRepository::new(db.pool());
     let installation_id = get_installation_id(&state);
 

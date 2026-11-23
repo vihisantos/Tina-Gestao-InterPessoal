@@ -257,9 +257,9 @@ impl TinaApp {
 
     /// Persiste mensagem textual após validar sessão e instalação.
     /// O backend de geração NVIDIA deverá usar uma API interna distinta.
-    pub async fn owner_append_chat_message(&self, session_id: &str, role: &str, content: &str) -> Result<infra::chat::ChatMessage> {
+    pub async fn owner_append_chat_message(&self, session_id: &str, content: &str) -> Result<infra::chat::ChatMessage> {
         self.require_owner(Operation::Create)?;
-        infra::chat::append_message(self.database.pool(), &self.config.installation_id, session_id, role, content).await
+        infra::chat::append_message(self.database.pool(), &self.config.installation_id, session_id, "user", content).await
     }
 
     /// Acesso direto ao banco exclusivamente para testes internos.

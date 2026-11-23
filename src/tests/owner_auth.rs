@@ -39,9 +39,7 @@ async fn windows_vault_creates_256_bit_key_and_requires_password_after_restart()
     assert!(!app.owner_unlocked().unwrap());
     assert!(app.sign_in_owner("SenhaErrada").await.is_err());
     assert!(app.require_owner(Operation::Read).is_err());
-    app.sign_in_owner("UmaSenhaForteLocal-2026!")
-        .await
-        .unwrap();
+    app.sign_in_owner("UmaSenhaForteLocal-2026!").await.unwrap();
     assert!(app.require_owner(Operation::Write).is_ok());
     assert!(app.require_owner(Operation::ChangeOwner).is_err());
 

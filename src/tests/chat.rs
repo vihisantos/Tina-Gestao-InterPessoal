@@ -109,13 +109,12 @@ async fn chat_owner_api_rejects_locked_session() {
         .await
         .is_err());
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM chat_sessions WHERE installation_id = ?",
-    )
-    .bind("chat-auth-installation")
-    .fetch_one(app.database().pool())
-    .await
-    .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM chat_sessions WHERE installation_id = ?")
+            .bind("chat-auth-installation")
+            .fetch_one(app.database().pool())
+            .await
+            .unwrap();
     assert_eq!(count, 0);
 
     drop(app);

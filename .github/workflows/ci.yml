@@ -75,6 +75,37 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  lockfile-refresh:
+    name: One-time Cargo lockfile refresh (TINA-ORG-007)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/tina-org-007-authority-backend'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR branch for lockfile-only refresh
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - name: Refresh Cargo.lock using current Cargo.toml
+        run: cargo generate-lockfile
+      - name: Commit only Cargo.lock on this feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add Cargo.lock
+          if git diff --cached --quiet; then
+            echo 'Cargo.lock already synchronized'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(deps): synchronize Cargo.lock for owner authentication'
+          git push origin HEAD:refs/heads/feat/tina-org-007-authority-backend
+
   rust-check:
     name: Rust and Tauri compilation (Windows)
     needs: rust-format
@@ -87,7 +118,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Check workspace
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
   rust-tests:
     name: Rust and Tauri tests (Windows)
@@ -101,7 +132,9 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Run workspace tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+      - name: Windows Credential Manager integration smoke
+        run: cargo test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
 
   frontend:
     name: Svelte frontend validation

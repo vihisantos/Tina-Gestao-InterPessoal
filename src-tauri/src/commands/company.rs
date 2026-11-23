@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::CompanyRepository;
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -43,8 +42,10 @@ fn get_installation_id(state: &TinaApp) -> String {
 /// Lista todas as empresas da instalação atual
 #[tauri::command]
 pub async fn list_companies(state: State<'_, TinaApp>) -> Result<Vec<CompanyDto>, String> {
-    let db = state.database();
-    let repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     let companies = repo
@@ -61,8 +62,10 @@ pub async fn get_company(
     state: State<'_, TinaApp>,
     company_id: String,
 ) -> Result<CompanyDto, String> {
-    let db = state.database();
-    let repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     let company = repo
@@ -87,8 +90,10 @@ pub async fn create_company(
     state: State<'_, TinaApp>,
     request: CreateCompanyRequest,
 ) -> Result<CompanyDto, String> {
-    let db = state.database();
-    let repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // O installation_id é obtido automaticamente do contexto confiável
@@ -108,8 +113,10 @@ pub async fn update_company(
     company_id: String,
     request: UpdateCompanyRequest,
 ) -> Result<(), String> {
-    let db = state.database();
-    let repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     repo.update_name(&company_id, &installation_id, &request.name)
@@ -122,8 +129,10 @@ pub async fn update_company(
 /// Archiva uma empresa (não pode ter departamentos ativos)
 #[tauri::command]
 pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> Result<(), String> {
-    let db = state.database();
-    let repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar pertencimento à instalação (escopo aplicado no SQL)

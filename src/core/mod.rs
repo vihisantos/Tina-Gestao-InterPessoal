@@ -4,11 +4,14 @@
 //! e coordenar as operações entre eles.
 
 pub mod assignment;
+pub mod authorization;
 pub mod company;
 pub mod department;
 pub mod employee;
 pub mod hierarchy;
 pub mod installation;
+pub mod key_recovery;
+pub mod owner_auth;
 pub mod position;
 mod scheduler;
 mod tina;

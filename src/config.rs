@@ -75,7 +75,7 @@ impl Default for NvidiaConfig {
 /// Configuração de segurança local.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    /// Habilita criptografia em repouso quando implementada.
+    /// Solicitação de criptografia em repouso (ainda não implementada). Nunca indica estado efetivo.
     pub encrypt_at_rest: bool,
     /// Exige senha mestra para operações sensíveis quando implementado.
     pub require_master_password: bool,
@@ -90,7 +90,7 @@ pub struct SecurityConfig {
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            encrypt_at_rest: true,
+            encrypt_at_rest: false,
             require_master_password: false,
             session_timeout_seconds: 8 * 3600,
             max_login_attempts: 5,
@@ -178,8 +178,13 @@ pub fn load_config() -> Result<AppConfig> {
                     std::fs::write(&config_path, content)?;
                 }
 
-                // Agora carregar normalmente
-                load_config_from(&config_path)
+                // Migrar o antigo default true: SQLite não está criptografado.
+                let mut config = load_config_from(&config_path)?;
+                if config.security.encrypt_at_rest {
+                    config.security.encrypt_at_rest = false;
+                    config.save(&config_path)?;
+                }
+                Ok(config)
             }
             _ => Err(crate::error::TinaError::Config(
                 "Invalid config format".to_string(),

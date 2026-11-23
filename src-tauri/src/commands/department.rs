@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::{CompanyRepository, DepartmentRepository};
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -54,9 +53,11 @@ pub async fn list_departments(
     state: State<'_, TinaApp>,
     company_id: String,
 ) -> Result<Vec<DepartmentDto>, String> {
-    let db = state.database();
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    let dept_repo = db.departments();
+    let company_repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar se a empresa pertence à instalação
@@ -82,8 +83,10 @@ pub async fn get_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<DepartmentDto, String> {
-    let db = state.database();
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     let dept = dept_repo
@@ -92,7 +95,7 @@ pub async fn get_department(
         .map_err(|e| e.to_string())?;
 
     // Verificar se pertence à instalação (via cadeia empresa → departamento)
-    let company_repo = CompanyRepository::new(db.pool());
+    let company_repo = db.companies();
     let companies = company_repo
         .list_by_installation(&installation_id)
         .await
@@ -126,9 +129,11 @@ pub async fn create_department(
     state: State<'_, TinaApp>,
     request: CreateDepartmentRequest,
 ) -> Result<DepartmentDto, String> {
-    let db = state.database();
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let dept_repo = db.departments();
+    let company_repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar se a empresa pertence à instalação
@@ -160,8 +165,10 @@ pub async fn update_department(
     department_id: String,
     request: UpdateDepartmentRequest,
 ) -> Result<(), String> {
-    let db = state.database();
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
@@ -188,8 +195,10 @@ pub async fn archive_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<(), String> {
-    let db = state.database();
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let db = state
+        .owner_database(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     // Verificar se pode ser arquivada

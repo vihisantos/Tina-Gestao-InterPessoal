@@ -4,3 +4,4 @@ mod assignment;
 mod employee;
 mod hierarchy;
 mod organizational;
+mod owner_auth;

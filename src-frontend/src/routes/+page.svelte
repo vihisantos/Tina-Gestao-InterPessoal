@@ -19,6 +19,60 @@
   let pingResult = $state<string | null>(null);
   let readyEvent = $state(false);
 
+  type OwnerStatus = { configured: boolean; unlocked: boolean; displayName: string | null };
+
+  let ownerStatus = $state<OwnerStatus | null>(null);
+  let ownerName = $state('');
+  let ownerPassword = $state('');
+  let ownerConfirm = $state('');
+  let ownerBusy = $state(false);
+  let ownerError = $state<string | null>(null);
+
+  async function refreshOwner() {
+    try {
+      ownerStatus = await invoke<OwnerStatus>('owner_status');
+      ownerError = null;
+    } catch (cause) {
+      ownerError = String(cause);
+    }
+  }
+
+  async function submitOwner(event: SubmitEvent) {
+    event.preventDefault();
+    if (!ownerStatus || ownerBusy) return;
+    if (!ownerStatus.configured && ownerPassword !== ownerConfirm) {
+      ownerError = 'As senhas precisam ser iguais.';
+      return;
+    }
+    ownerBusy = true;
+    ownerError = null;
+    try {
+      if (!ownerStatus.configured) {
+        await invoke('create_owner_account', { displayName: ownerName, password: ownerPassword });
+      }
+      await invoke('sign_in_owner', { password: ownerPassword });
+      ownerPassword = '';
+      ownerConfirm = '';
+      await refreshOwner();
+      await loadBootstrap();
+    } catch (cause) {
+      await refreshOwner();
+      ownerError = String(cause);
+    } finally {
+      ownerBusy = false;
+    }
+  }
+
+  async function lockOwner() {
+    try {
+      await invoke('lock_owner');
+      await refreshOwner();
+      await loadBootstrap();
+    } catch (cause) {
+      ownerError = String(cause);
+    }
+  }
+
   async function loadBootstrap() {
     try {
       info = await invoke<BootstrapInfo>('bootstrap');
@@ -50,6 +104,7 @@
     });
 
     void loadBootstrap();
+    void refreshOwner();
 
     return () => {
       disposed = true;
@@ -87,6 +142,61 @@
       {/if}
     </div>
     <img class="mascot" src="/tina.png" alt="" aria-hidden="true" />
+  </section>
+
+
+  <section class="owner-onboarding" aria-label="Conta do proprietário">
+    <Card title={ownerStatus?.configured ? 'Acesso do proprietário' : 'Crie sua conta na Tina'}>
+      {#if ownerStatus === null}
+        <p>Verificando conta local…</p>
+      {:else if ownerStatus.unlocked}
+        <p>Bem-vindo, {ownerStatus.displayName}. Sua sessão está desbloqueada.</p>
+        <Button onclick={lockOwner}>Bloquear sessão</Button>
+      {:else}
+        <p>
+          {ownerStatus.configured
+            ? 'Digite sua senha mestra para entrar.'
+            : 'Primeiro acesso: crie a conta do proprietário. A Tina gerará uma chave forte e a guardará no cofre do Windows.'}
+        </p>
+        <form class="owner-form" onsubmit={submitOwner}>
+          {#if !ownerStatus.configured}
+            <label for="owner-name">Seu nome</label>
+            <input id="owner-name" autocomplete="name" minlength="2" maxlength="80" required bind:value={ownerName} />
+          {/if}
+          <label for="owner-password">Senha mestra</label>
+          <input
+            id="owner-password"
+            type="password"
+            autocomplete={ownerStatus.configured ? 'current-password' : 'new-password'}
+            minlength={ownerStatus.configured ? undefined : 12}
+            maxlength="256"
+            required
+            bind:value={ownerPassword}
+          />
+          {#if !ownerStatus.configured}
+            <label for="owner-confirm">Confirme sua senha</label>
+            <input
+              id="owner-confirm"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              maxlength="256"
+              required
+              bind:value={ownerConfirm}
+            />
+          {/if}
+          <button type="submit" disabled={ownerBusy}>
+            {ownerBusy ? 'Verificando…' : ownerStatus.configured ? 'Entrar na Tina' : 'Criar conta e entrar'}
+          </button>
+        </form>
+        {#if !ownerStatus.configured}
+          <p class="owner-warning">Guarde sua senha. A recuperação e exportação da chave serão implementadas em etapa futura.</p>
+        {/if}
+      {/if}
+      {#if ownerError}
+        <p role="alert" class="error">{ownerError}</p>
+      {/if}
+    </Card>
   </section>
 
   <section class="grid" aria-label="Estado da instalação">
@@ -243,6 +353,51 @@
     .mascot {
       animation: none;
     }
+  }
+
+  .owner-onboarding {
+    margin-bottom: 1.25rem;
+  }
+
+  .owner-onboarding p {
+    color: var(--tina-text-muted);
+  }
+
+  .owner-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    max-width: 420px;
+  }
+
+  .owner-form label {
+    font-weight: 600;
+  }
+
+  .owner-form input {
+    padding: 0.75rem;
+    border: 1px solid var(--tina-border);
+    border-radius: 8px;
+    background: white;
+    color: var(--tina-text);
+  }
+
+  .owner-form button {
+    padding: 0.75rem;
+    border: none;
+    border-radius: 8px;
+    background: #ee6495;
+    color: white;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .owner-form button:disabled {
+    opacity: 0.6;
+  }
+
+  .owner-warning {
+    font-size: 0.85rem;
   }
 
   .grid {

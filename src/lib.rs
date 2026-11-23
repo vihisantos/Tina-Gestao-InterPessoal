@@ -40,7 +40,6 @@ pub struct TinaApp {
     owner_access: Arc<OwnerAccess>,
 }
 
-
 /// Acesso temporário aos repositórios da instalação, entregue somente após
 /// autenticação do proprietário. Não armazene este escopo entre operações.
 #[derive(Debug)]

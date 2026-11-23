@@ -120,3 +120,22 @@ async fn chat_owner_api_rejects_locked_session() {
     drop(app);
     let _ = std::fs::remove_file(path);
 }
+
+#[tokio::test]
+async fn rename_chat_enforces_installation_scope_and_title_validation() {
+    let path = std::env::temp_dir().join(format!("tina-chat-rename-{}.db", uuid::Uuid::new_v4()));
+    let db = Database::open(&path).await.unwrap();
+    let repo = InstallationRepository::new(db.pool());
+    let owner = repo.create("rename-owner", "owner-a").await.unwrap();
+    let outsider = repo.create("rename-outsider", "owner-b").await.unwrap();
+    let session = chat::create_session(db.pool(), &owner.id, "Original").await.unwrap();
+    assert!(chat::rename_session(db.pool(), &outsider.id, &session.id, "Intrusão").await.is_err());
+    assert!(chat::rename_session(db.pool(), &owner.id, &session.id, "  ").await.is_err());
+    assert!(chat::rename_session(db.pool(), &owner.id, &session.id, &"x".repeat(121)).await.is_err());
+    let renamed = chat::rename_session(db.pool(), &owner.id, &session.id, " Novo nome ").await.unwrap();
+    assert_eq!(renamed.title, "Novo nome");
+    assert_eq!(chat::list_sessions(db.pool(), &owner.id).await.unwrap()[0].title, "Novo nome");
+    assert!(chat::list_sessions(db.pool(), &outsider.id).await.unwrap().is_empty());
+    drop(db);
+    let _ = std::fs::remove_file(path);
+}

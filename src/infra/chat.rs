@@ -72,7 +72,9 @@ pub(crate) async fn rename_session(
     .execute(pool)
     .await?;
     if result.rows_affected() != 1 {
-        return Err(TinaError::Unauthorized("conversa fora da instalação ou inexistente".into()));
+        return Err(TinaError::Unauthorized(
+            "conversa fora da instalação ou inexistente".into(),
+        ));
     }
     Ok(sqlx::query_as(
         "SELECT id, title, created_at FROM chat_sessions WHERE id = ? AND installation_id = ?",

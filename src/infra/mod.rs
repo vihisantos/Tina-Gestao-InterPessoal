@@ -1,6 +1,7 @@
 //! Infrastructure - database, telemetry, etc.
 
 mod assignment;
+mod audit;
 mod company;
 mod db;
 mod department;
@@ -12,6 +13,7 @@ mod redis;
 mod telemetry;
 
 pub use assignment::*;
+pub use audit::*;
 pub use company::*;
 pub use db::*;
 pub use department::*;

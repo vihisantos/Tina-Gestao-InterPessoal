@@ -56,8 +56,8 @@
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
-      ownerError = String(cause);
       await refreshOwner();
+      ownerError = String(cause);
     } finally {
       ownerBusy = false;
     }

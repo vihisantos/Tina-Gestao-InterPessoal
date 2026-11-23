@@ -10,6 +10,7 @@ use argon2::Argon2;
 use rand::{rngs::OsRng, RngCore};
 use sqlx::SqlitePool;
 
+use crate::core::key_recovery::{self, WrappedKey};
 use crate::error::{Result, TinaError};
 
 /// Estado de cadastro do proprietário retornado à interface, sem segredos.
@@ -107,6 +108,77 @@ fn rollback_database_key(installation_id: &str) {
     let _ = installation_id;
 }
 
+
+#[cfg(windows)]
+fn vault_missing(installation_id: &str) -> Result<bool> {
+    match vault_entry(installation_id)?.get_password() {
+        Ok(value) if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) => Ok(false),
+        Ok(_) => Err(TinaError::Auth("chave presente no cofre inválida".into())),
+        Err(keyring::Error::NoEntry) => Ok(true),
+        Err(_) => Err(TinaError::Auth("cofre Windows indisponível".into())),
+    }
+}
+
+#[cfg(not(windows))]
+fn vault_missing(_installation_id: &str) -> Result<bool> {
+    Err(TinaError::Auth("cofre Windows indisponível".into()))
+}
+
+async fn restore_from_backup(pool: &SqlitePool, installation_id: &str, password: &str) -> Result<()> {
+    let item: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT salt, nonce, ciphertext FROM owner_key_recovery WHERE installation_id = ?",
+    ).bind(installation_id).fetch_optional(pool).await?;
+    let (salt, nonce, ciphertext) = item.ok_or_else(|| {
+        TinaError::Auth("chave ausente e backup indisponível".into())
+    })?;
+    let encrypted = WrappedKey { salt, nonce, ciphertext };
+    let mut original = key_recovery::unwrap(password, installation_id, &encrypted)?;
+    let secret: String = original.iter().map(|b| format!("{b:02x}")).collect();
+    original.fill(0);
+    store_database_key(installation_id, &secret)?;
+    if !vault_key_available(installation_id)? {
+        return Err(TinaError::Auth("chave restaurada não verificada".into()));
+    }
+    Ok(())
+}
+
+async fn ensure_backup(pool: &SqlitePool, installation_id: &str, password: &str) -> Result<()> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM owner_key_recovery WHERE installation_id = ?",
+    ).bind(installation_id).fetch_one(pool).await?;
+    if count > 0 {
+        return Ok(());
+    }
+    #[cfg(windows)]
+    {
+        let value = vault_entry(installation_id)?.get_password()
+            .map_err(|_| TinaError::Auth("cofre Windows indisponível".into()))?;
+        if value.len() != 64 {
+            return Err(TinaError::Auth("chave do cofre inválida".into()));
+        }
+        let mut original = [0u8; 32];
+        for (i, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let part = std::str::from_utf8(pair)
+                .map_err(|_| TinaError::Auth("chave inválida".into()))?;
+            original[i] = u8::from_str_radix(part, 16)
+                .map_err(|_| TinaError::Auth("chave inválida".into()))?;
+        }
+        let wrapped = key_recovery::wrap(password, installation_id, &original)?;
+        original.fill(0);
+        sqlx::query(
+            "INSERT OR IGNORE INTO owner_key_recovery (installation_id, salt, nonce, ciphertext) VALUES (?, ?, ?, ?)",
+        )
+        .bind(installation_id)
+        .bind(&wrapped.salt)
+        .bind(&wrapped.nonce)
+        .bind(&wrapped.ciphertext)
+        .execute(pool).await?;
+    }
+    #[cfg(not(windows))]
+    let _ = password;
+    Ok(())
+}
+
 impl OwnerAccess {
     /// Lê estado público da conta e verifica a validade da sessão local.
     pub async fn status(
@@ -175,10 +247,24 @@ impl OwnerAccess {
         let mut key_bytes = [0u8; 32];
         OsRng.fill_bytes(&mut key_bytes);
         let key: String = key_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        let wrapped = key_recovery::wrap(password, installation_id, &key_bytes)?;
+        key_bytes.fill(0);
+        sqlx::query(
+            "INSERT INTO owner_key_recovery (installation_id, salt, nonce, ciphertext) VALUES (?, ?, ?, ?)",
+        )
+        .bind(installation_id)
+        .bind(&wrapped.salt)
+        .bind(&wrapped.nonce)
+        .bind(&wrapped.ciphertext)
+        .execute(&mut *tx)
+        .await?;
 
         // A chave só existe no cofre do SO; se a gravação falhar,
         // descartar a transação remove a conta incompleta do banco.
-        store_database_key(installation_id, &key)?;
+        if let Err(error) = store_database_key(installation_id, &key) {
+            rollback_database_key(installation_id);
+            return Err(error);
+        }
         let read_back = vault_key_available(installation_id);
         if !matches!(read_back, Ok(true)) {
             rollback_database_key(installation_id);
@@ -242,9 +328,13 @@ impl OwnerAccess {
             return Err(TinaError::Auth("senha incorreta".into()));
         }
 
+        if vault_missing(installation_id)? {
+            restore_from_backup(pool, installation_id, password).await?;
+        }
         if !vault_key_available(installation_id)? {
             return Err(TinaError::Auth("chave inválida no cofre do Windows".into()));
         }
+        ensure_backup(pool, installation_id, password).await?;
 
         sqlx::query(
             "UPDATE owner_accounts SET failed_attempts = 0, locked_until = 0 WHERE installation_id = ?",

@@ -54,6 +54,26 @@ impl<'a> AuthorizedOwnerDatabase<'a> {
     pub fn pool(&self) -> &'a sqlx::SqlitePool {
         self.database.pool()
     }
+
+    /// Repositório de empresas disponível somente após a autorização do escopo.
+    pub fn companies(&self) -> infra::CompanyRepository<'a> {
+        infra::CompanyRepository::new(self.database.pool())
+    }
+
+    /// Repositório de departamentos disponível somente após a autorização do escopo.
+    pub fn departments(&self) -> infra::DepartmentRepository<'a> {
+        infra::DepartmentRepository::new(self.database.pool())
+    }
+
+    /// Repositório de cargos disponível somente após a autorização do escopo.
+    pub fn positions(&self) -> infra::PositionRepository<'a> {
+        infra::PositionRepository::new(self.database.pool())
+    }
+
+    /// Repositório de funcionários disponível somente após a autorização do escopo.
+    pub fn employees(&self) -> infra::EmployeeRepository<'a> {
+        infra::EmployeeRepository::new(self.database.pool())
+    }
 }
 
 impl TinaApp {

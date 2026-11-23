@@ -60,11 +60,11 @@ pub async fn list_positions(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let pos_repo = PositionRepository::new(db.pool());
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let pos_repo = db.positions();
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
-    let company_repo = CompanyRepository::new(db.pool());
+    let company_repo = db.companies();
     let companies = company_repo
         .list_by_installation(&installation_id)
         .await
@@ -106,8 +106,8 @@ pub async fn get_position(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let pos_repo = PositionRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
+    let pos_repo = db.positions();
+    let company_repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     let pos = pos_repo
@@ -152,11 +152,11 @@ pub async fn create_position(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let pos_repo = PositionRepository::new(db.pool());
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let pos_repo = db.positions();
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
-    let company_repo = CompanyRepository::new(db.pool());
+    let company_repo = db.companies();
     let companies = company_repo
         .list_by_installation(&installation_id)
         .await
@@ -205,7 +205,7 @@ pub async fn update_position(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let pos_repo = PositionRepository::new(db.pool());
+    let pos_repo = db.positions();
     let installation_id = get_installation_id(&state);
 
     // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
@@ -235,7 +235,7 @@ pub async fn archive_position(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let pos_repo = PositionRepository::new(db.pool());
+    let pos_repo = db.positions();
     let installation_id = get_installation_id(&state);
 
     // Verificar se pode ser arquivado

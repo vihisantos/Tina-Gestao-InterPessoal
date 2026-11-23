@@ -57,8 +57,8 @@ pub async fn list_departments(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
+    let dept_repo = db.departments();
+    let company_repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar se a empresa pertence à instalação
@@ -87,7 +87,7 @@ pub async fn get_department(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     let dept = dept_repo
@@ -96,7 +96,7 @@ pub async fn get_department(
         .map_err(|e| e.to_string())?;
 
     // Verificar se pertence à instalação (via cadeia empresa → departamento)
-    let company_repo = CompanyRepository::new(db.pool());
+    let company_repo = db.companies();
     let companies = company_repo
         .list_by_installation(&installation_id)
         .await
@@ -133,8 +133,8 @@ pub async fn create_department(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let dept_repo = DepartmentRepository::new(db.pool());
-    let company_repo = CompanyRepository::new(db.pool());
+    let dept_repo = db.departments();
+    let company_repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar se a empresa pertence à instalação
@@ -169,7 +169,7 @@ pub async fn update_department(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
@@ -199,7 +199,7 @@ pub async fn archive_department(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let dept_repo = DepartmentRepository::new(db.pool());
+    let dept_repo = db.departments();
     let installation_id = get_installation_id(&state);
 
     // Verificar se pode ser arquivada

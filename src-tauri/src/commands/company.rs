@@ -46,7 +46,7 @@ pub async fn list_companies(state: State<'_, TinaApp>) -> Result<Vec<CompanyDto>
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let repo = CompanyRepository::new(db.pool());
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     let companies = repo
@@ -66,7 +66,7 @@ pub async fn get_company(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let repo = CompanyRepository::new(db.pool());
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     let company = repo
@@ -94,7 +94,7 @@ pub async fn create_company(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = CompanyRepository::new(db.pool());
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // O installation_id é obtido automaticamente do contexto confiável
@@ -117,7 +117,7 @@ pub async fn update_company(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = CompanyRepository::new(db.pool());
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     repo.update_name(&company_id, &installation_id, &request.name)
@@ -133,7 +133,7 @@ pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> R
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = CompanyRepository::new(db.pool());
+    let repo = db.companies();
     let installation_id = get_installation_id(&state);
 
     // Verificar pertencimento à instalação (escopo aplicado no SQL)

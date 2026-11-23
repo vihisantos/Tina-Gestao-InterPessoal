@@ -46,7 +46,7 @@ pub struct DepartmentRepository<'a> {
 
 impl<'a> DepartmentRepository<'a> {
     /// Cria um novo repositório de departamentos
-    pub fn new(pool: &'a SqlitePool) -> Self {
+    pub(crate) fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
     }
 

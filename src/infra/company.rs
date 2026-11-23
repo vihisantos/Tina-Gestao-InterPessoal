@@ -42,7 +42,7 @@ pub struct CompanyRepository<'a> {
 
 impl<'a> CompanyRepository<'a> {
     /// Cria um novo repositório de empresas
-    pub fn new(pool: &'a SqlitePool) -> Self {
+    pub(crate) fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
     }
 

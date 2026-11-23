@@ -48,7 +48,7 @@ pub struct PositionRepository<'a> {
 
 impl<'a> PositionRepository<'a> {
     /// Cria um novo repositório de cargos
-    pub fn new(pool: &'a SqlitePool) -> Self {
+    pub(crate) fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
     }
 

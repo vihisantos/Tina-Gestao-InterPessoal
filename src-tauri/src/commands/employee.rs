@@ -85,7 +85,7 @@ pub async fn create_employee(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     // Validar que o cargo existe, está ativo e pertence à instalação
@@ -128,7 +128,7 @@ pub async fn get_employee(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     let employee = repo
@@ -156,7 +156,7 @@ pub async fn list_employees_by_company(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     // Validar que a empresa pertence à instalação
@@ -181,7 +181,7 @@ pub async fn list_employees_by_department(
     let db = state
         .owner_database(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     // Validar que o departamento pertence à instalação (via cadeia empresa → instalação)
@@ -207,7 +207,7 @@ pub async fn update_employee(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     // Obter company_id do funcionário via cadeia
@@ -235,7 +235,7 @@ pub async fn update_employee_responsibilities(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
@@ -261,7 +261,7 @@ pub async fn change_employee_position(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
@@ -320,7 +320,7 @@ pub async fn deactivate_employee(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
@@ -341,7 +341,7 @@ pub async fn reactivate_employee(
     let db = state
         .owner_database(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let repo = EmployeeRepository::new(db.pool());
+    let repo = db.employees();
     let installation_id = get_installation_id(&state);
 
     let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
@@ -364,7 +364,7 @@ struct PositionCompanyInfo {
 /// Valida que o cargo existe, está ativo e pertence à instalação.
 /// Retorna o company_id do cargo.
 async fn get_position_company_and_validate(
-    db: &tina::Database,
+    db: &tina::AuthorizedOwnerDatabase<'_>,
     position_id: &str,
     installation_id: &str,
 ) -> Result<PositionCompanyInfo, String> {
@@ -394,11 +394,11 @@ async fn get_position_company_and_validate(
 
 /// Valida que a empresa pertence à instalação
 async fn company_belongs_to_installation(
-    db: &tina::Database,
+    db: &tina::AuthorizedOwnerDatabase<'_>,
     company_id: &str,
     installation_id: &str,
 ) -> Result<bool, String> {
-    let repo = tina::infra::CompanyRepository::new(db.pool());
+    let repo = tina::infra::db.companies();
     repo.belongs_to_installation(company_id, installation_id)
         .await
         .map_err(|e| e.to_string())
@@ -406,7 +406,7 @@ async fn company_belongs_to_installation(
 
 /// Valida que o departamento pertence à instalação (via cadeia empresa → instalação)
 async fn department_belongs_to_installation(
-    db: &tina::Database,
+    db: &tina::AuthorizedOwnerDatabase<'_>,
     department_id: &str,
     installation_id: &str,
 ) -> Result<bool, String> {
@@ -429,7 +429,7 @@ async fn department_belongs_to_installation(
 
 /// Obtém o company_id de um funcionário via cadeia completa, validando instalação
 async fn get_employee_company_id(
-    db: &tina::Database,
+    db: &tina::AuthorizedOwnerDatabase<'_>,
     employee_id: &str,
     installation_id: &str,
 ) -> Result<String, String> {

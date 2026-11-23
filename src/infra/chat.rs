@@ -106,7 +106,7 @@ pub(crate) async fn list_messages(
         "SELECT m.id, m.role, m.content, m.created_at FROM chat_messages m
          JOIN chat_sessions s ON s.id = m.session_id AND s.installation_id = m.installation_id
          WHERE s.id = ? AND s.installation_id = ?
-         ORDER BY m.created_at, m.rowid LIMIT 500",
+         ORDER BY m.created_at DESC, m.rowid DESC LIMIT 500",
     )
     .bind(session)
     .bind(installation)

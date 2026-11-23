@@ -147,53 +147,54 @@ impl OwnerAccess {
                 "senha deve ter entre 12 e 256 caracteres".into(),
             ));
         }
-        let exists: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM owner_accounts WHERE installation_id = ?")
-                .bind(installation_id)
-                .fetch_one(pool)
-                .await?;
-        if exists != 0 {
-            return Err(TinaError::PermissionDenied(
-                "proprietário já cadastrado".into(),
-            ));
-        }
-
+        // A escrita do cadastro reserva atomicamente a instalação em SQLite
+        // ANTES de tocar no cofre. Isso impede que dois processos paralelos
+        // sobrescrevam ou apaguem a chave do primeiro proprietário cadastrado.
         let hash = password_hash(password)?;
-        let mut key_bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut key_bytes);
-        let key: String = key_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-        // A chave secreta nunca é enviada ao frontend nem gravada no SQLite.
-        store_database_key(installation_id, &key)?;
-        if !vault_key_available(installation_id)? {
-            rollback_database_key(installation_id);
-            return Err(TinaError::Auth("falha ao conferir chave do cofre".into()));
-        }
-
-        let result = sqlx::query(
+        let mut tx = pool.begin().await?;
+        let inserted = sqlx::query(
             "INSERT INTO owner_accounts (installation_id, owner_uuid, display_name, password_hash) \
              SELECT id, owner_uuid, ?, ? FROM installations \
-             WHERE id = ? AND owner_uuid = ?",
+             WHERE id = ? AND owner_uuid = ? \
+             AND NOT EXISTS (SELECT 1 FROM owner_accounts WHERE installation_id = ?)",
         )
         .bind(name)
         .bind(&hash)
         .bind(installation_id)
         .bind(owner_uuid)
-        .execute(pool)
-        .await;
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
 
-        match result {
-            Ok(rows) if rows.rows_affected() == 1 => Ok(()),
-            Ok(_) => {
-                rollback_database_key(installation_id);
-                Err(TinaError::Unauthorized(
-                    "instalação não autorizada para cadastro".into(),
-                ))
-            }
-            Err(err) => {
-                rollback_database_key(installation_id);
-                Err(err.into())
-            }
+        if inserted.rows_affected() != 1 {
+            return Err(TinaError::PermissionDenied(
+                "proprietário já cadastrado ou instalação inválida".into(),
+            ));
         }
+
+        let mut key_bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut key_bytes);
+        let key: String = key_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+
+        // A chave só existe no cofre do SO; se a gravação falhar,
+        // descartar a transação remove a conta incompleta do banco.
+        store_database_key(installation_id, &key)?;
+        let read_back = vault_key_available(installation_id);
+        if !matches!(read_back, Ok(true)) {
+            rollback_database_key(installation_id);
+            return Err(TinaError::Auth(
+                "falha ao verificar a chave no cofre do Windows".into(),
+            ));
+        }
+
+        // SQLite e Credential Manager são sistemas independentes: em falha
+        // de commit, tentar compensar removendo a chave recém-gerada.
+        if let Err(err) = tx.commit().await {
+            rollback_database_key(installation_id);
+            return Err(err.into());
+        }
+
+        Ok(())
     }
 
     /// Valida senha e presença da chave de banco, sem revelar a chave.
@@ -252,16 +253,22 @@ impl OwnerAccess {
         .execute(pool)
         .await?;
 
+        // Falhar fechado: duração extrema jamais deve criar sessão ilimitada.
+        let expiry = if timeout_seconds == 0 {
+            None
+        } else {
+            Some(
+                Instant::now()
+                    .checked_add(Duration::from_secs(timeout_seconds))
+                    .ok_or_else(|| TinaError::Auth("duração de sessão inválida".into()))?,
+            )
+        };
         let mut session = self
             .session
             .lock()
             .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
         session.unlocked = true;
-        session.expires_at = if timeout_seconds == 0 {
-            None
-        } else {
-            Instant::now().checked_add(Duration::from_secs(timeout_seconds))
-        };
+        session.expires_at = expiry;
         Ok(())
     }
 

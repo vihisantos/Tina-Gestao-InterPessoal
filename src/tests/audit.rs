@@ -1,13 +1,12 @@
 //! Contratos de auditoria organizacional: atomicidade, isolamento e imutabilidade.
-use crate::infra::{CompanyRepository, DepartmentRepository, InstallationRepository, PositionRepository};
+use crate::infra::{
+    CompanyRepository, DepartmentRepository, InstallationRepository, PositionRepository,
+};
 use crate::Database;
 
 #[tokio::test]
 async fn organizational_mutations_are_audited_transactionally() {
-    let file = std::env::temp_dir().join(format!(
-        "tina-audit-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let file = std::env::temp_dir().join(format!("tina-audit-{}.db", uuid::Uuid::new_v4()));
     let db = Database::open(&file).await.unwrap();
     let pool = db.pool();
     let installation = InstallationRepository::new(pool)
@@ -66,16 +65,20 @@ async fn organizational_mutations_are_audited_transactionally() {
     .fetch_one(pool)
     .await
     .unwrap();
-    assert!(sqlx::query("UPDATE organizational_audit_events SET action = 'fake' WHERE id = ?")
-        .bind(&row_id)
-        .execute(pool)
-        .await
-        .is_err());
-    assert!(sqlx::query("DELETE FROM organizational_audit_events WHERE id = ?")
-        .bind(&row_id)
-        .execute(pool)
-        .await
-        .is_err());
+    assert!(
+        sqlx::query("UPDATE organizational_audit_events SET action = 'fake' WHERE id = ?")
+            .bind(&row_id)
+            .execute(pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM organizational_audit_events WHERE id = ?")
+            .bind(&row_id)
+            .execute(pool)
+            .await
+            .is_err()
+    );
 
     // Falha do comando não deve deixar evento da operação abortada.
     let before: i64 = sqlx::query_scalar(
@@ -85,7 +88,10 @@ async fn organizational_mutations_are_audited_transactionally() {
     .fetch_one(pool)
     .await
     .unwrap();
-    assert!(companies.create(&installation.id, "Acme Atualizada").await.is_err());
+    assert!(companies
+        .create(&installation.id, "Acme Atualizada")
+        .await
+        .is_err());
     let after: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM organizational_audit_events WHERE installation_id = ?",
     )

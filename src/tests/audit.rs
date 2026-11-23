@@ -1,6 +1,7 @@
 //! Contratos de auditoria organizacional: atomicidade, isolamento e imutabilidade.
 use crate::infra::{
-    CompanyRepository, DepartmentRepository, InstallationRepository, PositionRepository,
+    CompanyRepository, DepartmentRepository, InstallationRepository, OrganizationalAuditRepository,
+    PositionRepository,
 };
 use crate::Database;
 
@@ -57,6 +58,17 @@ async fn organizational_mutations_are_audited_transactionally() {
     .await
     .unwrap();
     assert_eq!(scoped_count, 4);
+
+    let audit = OrganizationalAuditRepository::new(pool);
+    let page = audit.list_by_installation(&installation.id, 2, 0).await.unwrap();
+    assert_eq!(page.len(), 2);
+    assert!(page.iter().all(|event| event.installation_id == installation.id));
+    let second_page = audit.list_by_installation(&installation.id, 2, 2).await.unwrap();
+    assert_eq!(second_page.len(), 2);
+    assert_ne!(page[0].id, second_page[0].id);
+    let other_page = audit.list_by_installation(&other.id, 200, 0).await.unwrap();
+    assert_eq!(other_page.len(), 1);
+    assert!(other_page.iter().all(|event| event.installation_id == other.id));
 
     let row_id: String = sqlx::query_scalar(
         "SELECT id FROM organizational_audit_events WHERE installation_id = ? LIMIT 1",

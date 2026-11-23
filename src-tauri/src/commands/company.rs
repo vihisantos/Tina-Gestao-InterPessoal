@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tina::infra::CompanyRepository;
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]

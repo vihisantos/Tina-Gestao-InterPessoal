@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx;
 use tauri::State;
-use tina::infra::{EmployeeRepository, HierarchyService};
+use tina::infra::HierarchyService;
 use tina::TinaApp;
 
 #[derive(Debug, Serialize, Clone)]
@@ -398,7 +398,7 @@ async fn company_belongs_to_installation(
     company_id: &str,
     installation_id: &str,
 ) -> Result<bool, String> {
-    let repo = tina::infra::db.companies();
+    let repo = db.companies();
     repo.belongs_to_installation(company_id, installation_id)
         .await
         .map_err(|e| e.to_string())

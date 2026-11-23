@@ -244,9 +244,19 @@ impl TinaApp {
     }
 
     /// Renomeia uma conversa da instalação após autorização do proprietário.
-    pub async fn owner_rename_chat(&self, session_id: &str, title: &str) -> Result<infra::chat::ChatSession> {
+    pub async fn owner_rename_chat(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<infra::chat::ChatSession> {
         self.require_owner(Operation::Write)?;
-        infra::chat::rename_session(self.database.pool(), &self.config.installation_id, session_id, title).await
+        infra::chat::rename_session(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            title,
+        )
+        .await
     }
 
     /// Lista conversas apenas da instalação autenticada.

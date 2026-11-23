@@ -250,16 +250,35 @@ impl TinaApp {
     }
 
     /// Consulta mensagens de uma conversa após validação de escopo.
-    pub async fn owner_chat_messages(&self, session_id: &str) -> Result<Vec<infra::chat::ChatMessage>> {
+    pub async fn owner_chat_messages(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<infra::chat::ChatMessage>> {
         self.require_owner(Operation::Read)?;
-        infra::chat::list_messages(self.database.pool(), &self.config.installation_id, session_id).await
+        infra::chat::list_messages(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+        )
+        .await
     }
 
     /// Persiste mensagem textual após validar sessão e instalação.
     /// O backend de geração NVIDIA deverá usar uma API interna distinta.
-    pub async fn owner_append_chat_message(&self, session_id: &str, content: &str) -> Result<infra::chat::ChatMessage> {
+    pub async fn owner_append_chat_message(
+        &self,
+        session_id: &str,
+        content: &str,
+    ) -> Result<infra::chat::ChatMessage> {
         self.require_owner(Operation::Create)?;
-        infra::chat::append_message(self.database.pool(), &self.config.installation_id, session_id, "user", content).await
+        infra::chat::append_message(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            "user",
+            content,
+        )
+        .await
     }
 
     /// Acesso direto ao banco exclusivamente para testes internos.

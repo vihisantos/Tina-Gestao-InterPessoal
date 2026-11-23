@@ -61,5 +61,11 @@ async fn windows_vault_creates_256_bit_key_and_requires_password_after_restart()
         .await
         .unwrap();
     assert!(reopened.require_owner(Operation::Read).is_ok());
+    // Simula perda do perfil Windows: recuperar do backup AES-GCM no SQLite
+    // usando a senha mestre, sem nunca retornar a chave pelo IPC.
+    entry.delete_credential().unwrap();
+    reopened.lock_owner().unwrap();
+    reopened.sign_in_owner("UmaSenhaForteLocal-2026!").await.unwrap();
+    assert_eq!(entry.get_password().unwrap(), key);
     entry.delete_credential().unwrap();
 }

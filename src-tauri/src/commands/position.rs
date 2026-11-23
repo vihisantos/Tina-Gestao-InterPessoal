@@ -57,7 +57,8 @@ pub async fn list_positions(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<Vec<PositionDto>, String> {
-    state.require_owner(tina::core::authorization::Operation::Read)
+    state
+        .require_owner(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
@@ -103,7 +104,8 @@ pub async fn get_position(
     state: State<'_, TinaApp>,
     position_id: String,
 ) -> Result<PositionDto, String> {
-    state.require_owner(tina::core::authorization::Operation::Read)
+    state
+        .require_owner(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
@@ -149,7 +151,8 @@ pub async fn create_position(
     state: State<'_, TinaApp>,
     request: CreatePositionRequest,
 ) -> Result<PositionDto, String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
@@ -202,7 +205,8 @@ pub async fn update_position(
     position_id: String,
     request: UpdatePositionRequest,
 ) -> Result<(), String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());
@@ -232,7 +236,8 @@ pub async fn archive_position(
     state: State<'_, TinaApp>,
     position_id: String,
 ) -> Result<(), String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let pos_repo = PositionRepository::new(db.pool());

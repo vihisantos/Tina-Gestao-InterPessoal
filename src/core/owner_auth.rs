@@ -45,13 +45,11 @@ fn password_hash(password: &str) -> Result<String> {
 }
 
 fn password_matches(password: &str, stored: &str) -> bool {
-    PasswordHash::new(stored)
-        .ok()
-        .is_some_and(|hash| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &hash)
-                .is_ok()
-        })
+    PasswordHash::new(stored).ok().is_some_and(|hash| {
+        Argon2::default()
+            .verify_password(password.as_bytes(), &hash)
+            .is_ok()
+    })
 }
 
 #[cfg(windows)]
@@ -65,27 +63,35 @@ fn store_database_key(installation_id: &str, key: &str) -> Result<()> {
     {
         vault_entry(installation_id)?
             .set_password(key)
-            .map_err(|_| TinaError::Auth("não foi possível salvar a chave no cofre do Windows".into()))
+            .map_err(|_| {
+                TinaError::Auth("não foi possível salvar a chave no cofre do Windows".into())
+            })
     }
     #[cfg(not(windows))]
     {
         let _ = (installation_id, key);
-        Err(TinaError::Auth("primeiro acesso disponível no Windows".into()))
+        Err(TinaError::Auth(
+            "primeiro acesso disponível no Windows".into(),
+        ))
     }
 }
 
 fn vault_key_available(installation_id: &str) -> Result<bool> {
     #[cfg(windows)]
     {
-        let secret = vault_entry(installation_id)?
-            .get_password()
-            .map_err(|_| TinaError::Auth("chave do proprietário ausente ou inacessível no cofre do Windows".into()))?;
+        let secret = vault_entry(installation_id)?.get_password().map_err(|_| {
+            TinaError::Auth(
+                "chave do proprietário ausente ou inacessível no cofre do Windows".into(),
+            )
+        })?;
         Ok(secret.len() == 64 && secret.bytes().all(|b| b.is_ascii_hexdigit()))
     }
     #[cfg(not(windows))]
     {
         let _ = installation_id;
-        Err(TinaError::Auth("cofre do Windows não disponível neste sistema".into()))
+        Err(TinaError::Auth(
+            "cofre do Windows não disponível neste sistema".into(),
+        ))
     }
 }
 
@@ -103,13 +109,16 @@ fn rollback_database_key(installation_id: &str) {
 
 impl OwnerAccess {
     /// Lê estado público da conta e verifica a validade da sessão local.
-    pub async fn status(&self, pool: &SqlitePool, installation_id: &str) -> Result<OwnerAccountStatus> {
-        let display_name: Option<String> = sqlx::query_scalar(
-            "SELECT display_name FROM owner_accounts WHERE installation_id = ?",
-        )
-        .bind(installation_id)
-        .fetch_optional(pool)
-        .await?;
+    pub async fn status(
+        &self,
+        pool: &SqlitePool,
+        installation_id: &str,
+    ) -> Result<OwnerAccountStatus> {
+        let display_name: Option<String> =
+            sqlx::query_scalar("SELECT display_name FROM owner_accounts WHERE installation_id = ?")
+                .bind(installation_id)
+                .fetch_optional(pool)
+                .await?;
         Ok(OwnerAccountStatus {
             configured: display_name.is_some(),
             unlocked: self.is_unlocked()?,
@@ -129,19 +138,24 @@ impl OwnerAccess {
         let _guard = self.setup_guard.lock().await;
         let name = display_name.trim();
         if name.chars().count() < 2 || name.chars().count() > 80 {
-            return Err(TinaError::Validation("nome deve ter entre 2 e 80 caracteres".into()));
+            return Err(TinaError::Validation(
+                "nome deve ter entre 2 e 80 caracteres".into(),
+            ));
         }
         if password.chars().count() < 12 || password.chars().count() > 256 {
-            return Err(TinaError::Validation("senha deve ter entre 12 e 256 caracteres".into()));
+            return Err(TinaError::Validation(
+                "senha deve ter entre 12 e 256 caracteres".into(),
+            ));
         }
-        let exists: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM owner_accounts WHERE installation_id = ?",
-        )
-        .bind(installation_id)
-        .fetch_one(pool)
-        .await?;
+        let exists: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM owner_accounts WHERE installation_id = ?")
+                .bind(installation_id)
+                .fetch_one(pool)
+                .await?;
         if exists != 0 {
-            return Err(TinaError::PermissionDenied("proprietário já cadastrado".into()));
+            return Err(TinaError::PermissionDenied(
+                "proprietário já cadastrado".into(),
+            ));
         }
 
         let hash = password_hash(password)?;
@@ -171,7 +185,9 @@ impl OwnerAccess {
             Ok(rows) if rows.rows_affected() == 1 => Ok(()),
             Ok(_) => {
                 rollback_database_key(installation_id);
-                Err(TinaError::Unauthorized("instalação não autorizada para cadastro".into()))
+                Err(TinaError::Unauthorized(
+                    "instalação não autorizada para cadastro".into(),
+                ))
             }
             Err(err) => {
                 rollback_database_key(installation_id);
@@ -198,16 +214,18 @@ impl OwnerAccess {
         .fetch_optional(pool)
         .await?;
 
-        let (hash, _failures, locked_until) = row.ok_or_else(|| {
-            TinaError::Auth("crie a conta de proprietário primeiro".into())
-        })?;
+        let (hash, _failures, locked_until) =
+            row.ok_or_else(|| TinaError::Auth("crie a conta de proprietário primeiro".into()))?;
         let now = chrono::Utc::now().timestamp();
         if locked_until > now {
-            return Err(TinaError::Auth("muitas tentativas; acesso temporariamente bloqueado".into()));
+            return Err(TinaError::Auth(
+                "muitas tentativas; acesso temporariamente bloqueado".into(),
+            ));
         }
         if !password_matches(password, &hash) {
             let limit = i64::from(max_attempts.max(1));
-            let until = now.saturating_add(i64::try_from(lockout_seconds.max(1)).unwrap_or(i64::MAX));
+            let until =
+                now.saturating_add(i64::try_from(lockout_seconds.max(1)).unwrap_or(i64::MAX));
             sqlx::query(
                 "UPDATE owner_accounts SET \
                  locked_until = CASE WHEN failed_attempts + 1 >= ? THEN ? ELSE 0 END, \
@@ -234,7 +252,10 @@ impl OwnerAccess {
         .execute(pool)
         .await?;
 
-        let mut session = self.session.lock().map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
         session.unlocked = true;
         session.expires_at = if timeout_seconds == 0 {
             None
@@ -246,8 +267,14 @@ impl OwnerAccess {
 
     /// Indica se o proprietário está autenticado e se a sessão ainda não expirou.
     pub fn is_unlocked(&self) -> Result<bool> {
-        let mut session = self.session.lock().map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
-        if session.expires_at.is_some_and(|expires| expires <= Instant::now()) {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        if session
+            .expires_at
+            .is_some_and(|expires| expires <= Instant::now())
+        {
             *session = Session::default();
         }
         Ok(session.unlocked)
@@ -255,7 +282,10 @@ impl OwnerAccess {
 
     /// Encerra a sessão imediatamente.
     pub fn lock(&self) -> Result<()> {
-        let mut session = self.session.lock().map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
         *session = Session::default();
         Ok(())
     }

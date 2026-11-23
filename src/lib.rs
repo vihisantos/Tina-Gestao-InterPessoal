@@ -11,9 +11,11 @@
 use std::sync::Arc;
 
 use crate::config::AppConfig;
-use crate::error::Result;
-use crate::core::authorization::{Actor, ActorContext, AuthorizationPolicy, Operation, ResourceScope};
+use crate::core::authorization::{
+    Actor, ActorContext, AuthorizationPolicy, Operation, ResourceScope,
+};
 use crate::core::owner_auth::{OwnerAccess, OwnerAccountStatus};
+use crate::error::Result;
 
 pub mod config;
 pub mod core;
@@ -171,7 +173,9 @@ impl TinaApp {
     /// Exige sessão de proprietário para toda ação administrativa.
     pub fn require_owner(&self, operation: Operation) -> Result<()> {
         if !self.owner_access.is_unlocked()? {
-            return Err(TinaError::Unauthorized("sessão do proprietário bloqueada".into()));
+            return Err(TinaError::Unauthorized(
+                "sessão do proprietário bloqueada".into(),
+            ));
         }
         let context = ActorContext::verified(self.config.installation_id.clone(), Actor::Owner);
         AuthorizationPolicy::authorize(

@@ -40,7 +40,10 @@ pub async fn create_owner_account(
 /// Autentica senha sem confiar em UUIDs fornecidos pela interface.
 #[tauri::command]
 pub async fn sign_in_owner(state: State<'_, TinaApp>, password: String) -> Result<(), String> {
-    state.sign_in_owner(&password).await.map_err(|e| e.to_string())
+    state
+        .sign_in_owner(&password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Bloqueia a sessão sem eliminar a conta ou a chave.

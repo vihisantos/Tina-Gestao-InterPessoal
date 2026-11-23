@@ -43,7 +43,8 @@ fn get_installation_id(state: &TinaApp) -> String {
 /// Lista todas as empresas da instalação atual
 #[tauri::command]
 pub async fn list_companies(state: State<'_, TinaApp>) -> Result<Vec<CompanyDto>, String> {
-    state.require_owner(tina::core::authorization::Operation::Read)
+    state
+        .require_owner(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
@@ -63,7 +64,8 @@ pub async fn get_company(
     state: State<'_, TinaApp>,
     company_id: String,
 ) -> Result<CompanyDto, String> {
-    state.require_owner(tina::core::authorization::Operation::Read)
+    state
+        .require_owner(tina::core::authorization::Operation::Read)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
@@ -91,7 +93,8 @@ pub async fn create_company(
     state: State<'_, TinaApp>,
     request: CreateCompanyRequest,
 ) -> Result<CompanyDto, String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
@@ -114,7 +117,8 @@ pub async fn update_company(
     company_id: String,
     request: UpdateCompanyRequest,
 ) -> Result<(), String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());
@@ -130,7 +134,8 @@ pub async fn update_company(
 /// Archiva uma empresa (não pode ter departamentos ativos)
 #[tauri::command]
 pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> Result<(), String> {
-    state.require_owner(tina::core::authorization::Operation::Write)
+    state
+        .require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
     let db = state.database();
     let repo = CompanyRepository::new(db.pool());

@@ -5,12 +5,12 @@
 
 pub mod assignment;
 pub mod authorization;
-pub mod owner_auth;
 pub mod company;
 pub mod department;
 pub mod employee;
 pub mod hierarchy;
 pub mod installation;
+pub mod owner_auth;
 pub mod position;
 mod scheduler;
 mod tina;

@@ -91,3 +91,33 @@ async fn chat_history_returns_latest_500_in_chronological_order() {
     drop(db);
     let _ = std::fs::remove_file(path);
 }
+
+#[tokio::test]
+async fn chat_owner_api_rejects_locked_session() {
+    let path = std::env::temp_dir().join(format!("tina-chat-auth-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&path, "chat-auth-installation", "chat-auth-owner")
+        .await
+        .unwrap();
+
+    // Acesso ao armazenamento não pode contornar autenticação, nem mesmo
+    // quando o identificador da instalação é conhecido pelo chamador.
+    assert!(app.owner_create_chat("Conversa sem login").await.is_err());
+    assert!(app.owner_list_chats().await.is_err());
+    assert!(app.owner_chat_messages("id-conhecido").await.is_err());
+    assert!(app
+        .owner_append_chat_message("id-conhecido", "mensagem não autorizada")
+        .await
+        .is_err());
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM chat_sessions WHERE installation_id = ?",
+    )
+    .bind("chat-auth-installation")
+    .fetch_one(app.database().pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+
+    drop(app);
+    let _ = std::fs::remove_file(path);
+}

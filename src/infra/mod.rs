@@ -1,6 +1,7 @@
 //! Infrastructure - database, telemetry, etc.
 
 mod assignment;
+pub mod chat;
 mod company;
 mod db;
 mod department;

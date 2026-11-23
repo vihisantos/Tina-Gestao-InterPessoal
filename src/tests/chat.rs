@@ -81,10 +81,12 @@ async fn chat_history_returns_latest_500_in_chronological_order() {
     assert_eq!(messages.len(), 500);
     assert_eq!(messages.first().unwrap().content, "mensagem-005");
     assert_eq!(messages.last().unwrap().content, "mensagem-504");
-    assert!(chat::list_messages(db.pool(), "outra-instalacao", &session.id)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        chat::list_messages(db.pool(), "outra-instalacao", &session.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     drop(db);
     let _ = std::fs::remove_file(path);

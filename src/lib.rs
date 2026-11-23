@@ -239,7 +239,7 @@ impl TinaApp {
 
     /// Cria uma conversa principal após validar a sessão do proprietário.
     pub async fn owner_create_chat(&self, title: &str) -> Result<infra::chat::ChatSession> {
-        self.require_owner(Operation::Create)?;
+        self.require_owner(Operation::Write)?;
         infra::chat::create_session(self.database.pool(), &self.config.installation_id, title).await
     }
 
@@ -270,7 +270,7 @@ impl TinaApp {
         session_id: &str,
         content: &str,
     ) -> Result<infra::chat::ChatMessage> {
-        self.require_owner(Operation::Create)?;
+        self.require_owner(Operation::Write)?;
         infra::chat::append_message(
             self.database.pool(),
             &self.config.installation_id,

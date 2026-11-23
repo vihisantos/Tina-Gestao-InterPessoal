@@ -1,11 +1,11 @@
 //! Recuperação da chave do proprietário com AES-256-GCM e Argon2id.
 //! O arquivo SQLite continua sem criptografia nesta fase.
 
+use crate::error::{Result, TinaError};
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::Argon2;
 use rand::{rngs::OsRng, RngCore};
-use crate::error::{Result, TinaError};
 
 /// Backup criptografado da chave de 256 bits armazenada no cofre Windows.
 #[derive(Debug)]
@@ -37,7 +37,10 @@ pub fn wrap(password: &str, installation_id: &str, raw: &[u8; 32]) -> Result<Wra
         .map_err(|_| TinaError::Auth("chave de recuperação inválida".into()))?;
     let result = cipher.encrypt(
         Nonce::from_slice(&nonce),
-        Payload { msg: raw, aad: installation_id.as_bytes() },
+        Payload {
+            msg: raw,
+            aad: installation_id.as_bytes(),
+        },
     );
     key.fill(0);
     Ok(WrappedKey {
@@ -57,7 +60,10 @@ pub fn unwrap(password: &str, installation_id: &str, backup: &WrappedKey) -> Res
         .map_err(|_| TinaError::Auth("chave de recuperação inválida".into()))?;
     let result = cipher.decrypt(
         Nonce::from_slice(&backup.nonce),
-        Payload { msg: &backup.ciphertext, aad: installation_id.as_bytes() },
+        Payload {
+            msg: &backup.ciphertext,
+            aad: installation_id.as_bytes(),
+        },
     );
     key.fill(0);
     result

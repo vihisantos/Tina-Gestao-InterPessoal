@@ -108,7 +108,6 @@ fn rollback_database_key(installation_id: &str) {
     let _ = installation_id;
 }
 
-
 #[cfg(windows)]
 fn vault_missing(installation_id: &str) -> Result<bool> {
     match vault_entry(installation_id)?.get_password() {
@@ -124,14 +123,24 @@ fn vault_missing(_installation_id: &str) -> Result<bool> {
     Err(TinaError::Auth("cofre Windows indisponível".into()))
 }
 
-async fn restore_from_backup(pool: &SqlitePool, installation_id: &str, password: &str) -> Result<()> {
+async fn restore_from_backup(
+    pool: &SqlitePool,
+    installation_id: &str,
+    password: &str,
+) -> Result<()> {
     let item: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
         "SELECT salt, nonce, ciphertext FROM owner_key_recovery WHERE installation_id = ?",
-    ).bind(installation_id).fetch_optional(pool).await?;
-    let (salt, nonce, ciphertext) = item.ok_or_else(|| {
-        TinaError::Auth("chave ausente e backup indisponível".into())
-    })?;
-    let encrypted = WrappedKey { salt, nonce, ciphertext };
+    )
+    .bind(installation_id)
+    .fetch_optional(pool)
+    .await?;
+    let (salt, nonce, ciphertext) =
+        item.ok_or_else(|| TinaError::Auth("chave ausente e backup indisponível".into()))?;
+    let encrypted = WrappedKey {
+        salt,
+        nonce,
+        ciphertext,
+    };
     let mut original = key_recovery::unwrap(password, installation_id, &encrypted)?;
     let secret: String = original.iter().map(|b| format!("{b:02x}")).collect();
     original.fill(0);
@@ -143,23 +152,26 @@ async fn restore_from_backup(pool: &SqlitePool, installation_id: &str, password:
 }
 
 async fn ensure_backup(pool: &SqlitePool, installation_id: &str, password: &str) -> Result<()> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM owner_key_recovery WHERE installation_id = ?",
-    ).bind(installation_id).fetch_one(pool).await?;
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM owner_key_recovery WHERE installation_id = ?")
+            .bind(installation_id)
+            .fetch_one(pool)
+            .await?;
     if count > 0 {
         return Ok(());
     }
     #[cfg(windows)]
     {
-        let value = vault_entry(installation_id)?.get_password()
+        let value = vault_entry(installation_id)?
+            .get_password()
             .map_err(|_| TinaError::Auth("cofre Windows indisponível".into()))?;
         if value.len() != 64 {
             return Err(TinaError::Auth("chave do cofre inválida".into()));
         }
         let mut original = [0u8; 32];
         for (i, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-            let part = std::str::from_utf8(pair)
-                .map_err(|_| TinaError::Auth("chave inválida".into()))?;
+            let part =
+                std::str::from_utf8(pair).map_err(|_| TinaError::Auth("chave inválida".into()))?;
             original[i] = u8::from_str_radix(part, 16)
                 .map_err(|_| TinaError::Auth("chave inválida".into()))?;
         }

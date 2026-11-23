@@ -408,22 +408,19 @@ impl OwnerAccess {
         .execute(pool)
         .await?;
 
-        // Falhar fechado: duração extrema jamais deve criar sessão ilimitada.
-        let expiry = if timeout_seconds == 0 {
-            None
-        } else {
-            Some(
-                Instant::now()
-                    .checked_add(Duration::from_secs(timeout_seconds))
-                    .ok_or_else(|| TinaError::Auth("duração de sessão inválida".into()))?,
-            )
-        };
+        // Sessão sem expiração é proibida, inclusive por configuração inválida.
+        if timeout_seconds == 0 {
+            return Err(TinaError::Auth("duração de sessão deve ser positiva".into()));
+        }
+        let expiry = Instant::now()
+            .checked_add(Duration::from_secs(timeout_seconds))
+            .ok_or_else(|| TinaError::Auth("duração de sessão inválida".into()))?;
         let mut session = self
             .session
             .lock()
             .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
         session.unlocked = true;
-        session.expires_at = expiry;
+        session.expires_at = Some(expiry);
         Ok(())
     }
 

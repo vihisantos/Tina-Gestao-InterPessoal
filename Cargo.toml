@@ -29,6 +29,9 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["clock", "std"] }
 env_logger = "0.11"
+argon2 = "0.5.3"
+rand = "0.8"
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }

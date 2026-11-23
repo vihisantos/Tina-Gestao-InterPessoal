@@ -5,6 +5,7 @@
 
 pub mod assignment;
 pub mod authorization;
+pub mod owner_auth;
 pub mod company;
 pub mod department;
 pub mod employee;

@@ -351,7 +351,6 @@ impl TinaApp {
         .await
     }
 
-
     /// Gera resposta no backend, usando exclusivamente o modelo configurado da Tina.
     /// Uma geração por instalação; respostas incompletas não entram no histórico.
     pub async fn owner_generate_chat(
@@ -361,7 +360,9 @@ impl TinaApp {
         mut on_delta: impl FnMut(&str) -> Result<()>,
     ) -> Result<infra::chat::ChatMessage> {
         self.require_owner(Operation::Write)?;
-        let _guard = self.chat_generation.try_lock()
+        let _guard = self
+            .chat_generation
+            .try_lock()
             .map_err(|_| TinaError::Other("já existe uma geração ativa".into()))?;
         self.require_owner(Operation::Write)?;
         #[cfg(not(windows))]
@@ -374,33 +375,47 @@ impl TinaApp {
             let settings = &self.config.nvidia;
             infra::chat::nvidia_endpoint(&settings.base_url)?;
             if settings.max_tokens == 0 || settings.max_tokens > 4096 {
-                return Err(TinaError::Other("limite de saída ainda não validado para o modelo".into()));
+                return Err(TinaError::Other(
+                    "limite de saída ainda não validado para o modelo".into(),
+                ));
             }
             let messages = self.owner_chat_messages(session_id).await?;
             let context = infra::chat::context_window(&messages, 8192);
             if context.last().map(|m| m.role.as_str()) != Some("user") {
-                return Err(TinaError::Other("nenhuma mensagem de usuário disponível no contexto".into()));
+                return Err(TinaError::Other(
+                    "nenhuma mensagem de usuário disponível no contexto".into(),
+                ));
             }
             let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
                 .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
-            let key = entry.get_password()
+            let key = entry
+                .get_password()
                 .map_err(|_| TinaError::Other("configure a chave NVIDIA".into()))?;
             self.require_owner(Operation::Write)?;
             let answer = infra::chat::stream_nvidia(
-                &key, &settings.default_model, context, settings.max_tokens,
-                cancelled.clone(), |delta| {
+                &key,
+                &settings.default_model,
+                context,
+                settings.max_tokens,
+                cancelled.clone(),
+                |delta| {
                     self.require_owner(Operation::Read)?;
                     on_delta(delta)
                 },
-            ).await?;
+            )
+            .await?;
             self.require_owner(Operation::Write)?;
             if *cancelled.borrow() {
                 return Err(TinaError::Other("geração cancelada".into()));
             }
             infra::chat::append_message(
-                self.database.pool(), &self.config.installation_id,
-                session_id, "assistant", &answer,
-            ).await
+                self.database.pool(),
+                &self.config.installation_id,
+                session_id,
+                "assistant",
+                &answer,
+            )
+            .await
         }
     }
 

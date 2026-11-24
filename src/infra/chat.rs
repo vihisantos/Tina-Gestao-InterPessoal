@@ -345,21 +345,7 @@ pub(crate) async fn stream_nvidia(
             .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))?
         {
             for event in decoder.push(&chunk)? {
-                let value: serde_json::Value = serde_json::from_str(&event)
-                    .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
-                if value.get("error").is_some() {
-                    return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
-                }
-                if let Some(delta) = value
-                    .pointer("/choices/0/delta/content")
-                    .and_then(serde_json::Value::as_str)
-                {
-                    if answer.len().saturating_add(delta.len()) > 100_000 {
-                        return Err(TinaError::Other("resposta excede limite local".into()));
-                    }
-                    on_delta(delta)?;
-                    answer.push_str(delta);
-                }
+                append_nvidia_event(&event, &mut answer, &mut on_delta)?;
             }
             if decoder.done {
                 break;
@@ -381,5 +367,68 @@ pub(crate) async fn stream_nvidia(
             }
         } => Err(TinaError::Other("geração cancelada".into())),
         result = work => result,
+    }
+}
+
+fn append_nvidia_event(
+    event: &str,
+    answer: &mut String,
+    mut on_delta: impl FnMut(&str) -> Result<()>,
+) -> Result<()> {
+    let value: serde_json::Value = serde_json::from_str(event)
+        .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
+    if value.get("error").is_some() {
+        return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
+    }
+    if let Some(delta) = value
+        .pointer("/choices/0/delta/content")
+        .and_then(serde_json::Value::as_str)
+    {
+        if answer.len().saturating_add(delta.len()) > 100_000 {
+            return Err(TinaError::Other("resposta excede limite local".into()));
+        }
+        on_delta(delta)?;
+        answer.push_str(delta);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod nvidia_event_tests {
+    use super::*;
+
+    #[test]
+    fn mock_events_accumulate_only_content() {
+        let mut answer = String::new();
+        let mut emitted = String::new();
+        for event in [
+            r#"{"choices":[{"delta":{"role":"assistant"}}]}"#,
+            r#"{"choices":[{"delta":{"content":"Olá"}}]}"#,
+            r#"{"choices":[{"delta":{"content":"!"}}]}"#,
+        ] {
+            append_nvidia_event(event, &mut answer, |delta| {
+                emitted.push_str(delta);
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert_eq!(answer, "Olá!");
+        assert_eq!(emitted, answer);
+    }
+
+    #[test]
+    fn rejects_provider_error_invalid_json_and_closed_channel() {
+        let mut answer = String::new();
+        for event in [r#"{"error":{"message":"private"}}"#, "invalid"] {
+            let error = append_nvidia_event(event, &mut answer, |_| Ok(())).unwrap_err();
+            assert!(!error.to_string().contains("private"));
+        }
+        assert!(append_nvidia_event(
+            r#"{"choices":[{"delta":{"content":"discard"}}]}"#,
+            &mut answer,
+            |_| Err(TinaError::Other("closed".into())),
+        )
+        .is_err());
+        assert!(answer.is_empty());
     }
 }

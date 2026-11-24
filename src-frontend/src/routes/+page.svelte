@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, Channel } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import Badge from '$lib/components/Badge.svelte';
   import Button from '$lib/components/Button.svelte';
@@ -28,10 +28,86 @@
   let ownerBusy = $state(false);
   let ownerError = $state<string | null>(null);
 
+  type ChatSession = { id: string; title: string; created_at: string };
+  type ChatMessage = { id: string; role: string; content: string; created_at: string };
+  let chats = $state<ChatSession[]>([]);
+  let selected = $state('');
+  let messages = $state<ChatMessage[]>([]);
+  let draft = $state('');
+  let partial = $state('');
+  let chatBusy = $state(false);
+  let chatError = $state('');
+  let apiKey = $state('');
+  let hasKey = $state(false);
+  let chatEpoch = 0;
+
+  async function loadChat() {
+    try {
+      chats = await invoke<ChatSession[]>('chat_list');
+      hasKey = await invoke<boolean>('chat_has_key');
+      if (chats.length) await openChat(chats[0].id);
+    } catch (cause) { chatError = String(cause); }
+  }
+
+  async function openChat(id: string) {
+    if (chatBusy) return;
+    const epoch = ++chatEpoch;
+    try {
+      const history = await invoke<ChatMessage[]>('chat_history', { sessionId: id });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      selected = id;
+      messages = history;
+      partial = '';
+    } catch (cause) { chatError = String(cause); }
+  }
+
+  async function saveKey(event: SubmitEvent) {
+    event.preventDefault();
+    try {
+      await invoke('chat_set_key', { key: apiKey });
+      hasKey = true;
+      chatError = '';
+    } catch (cause) { chatError = String(cause); }
+    finally { apiKey = ''; }
+  }
+
+  async function sendChat(event: SubmitEvent) {
+    event.preventDefault();
+    if (chatBusy || !draft.trim() || !hasKey) return;
+    chatBusy = true;
+    chatError = '';
+    partial = '';
+    const epoch = chatEpoch;
+    try {
+      if (!selected) {
+        const session = await invoke<ChatSession>('chat_create', { title: draft.trim().slice(0, 80) });
+        if (epoch !== chatEpoch) return;
+        selected = session.id;
+        chats = [session, ...chats];
+      }
+      const sessionId = selected;
+      const message = await invoke<ChatMessage>('chat_append', { sessionId, content: draft });
+      if (epoch !== chatEpoch) return;
+      messages = [...messages, message];
+      draft = '';
+      const onDelta = new Channel<string>();
+      onDelta.onmessage = (delta) => { if (epoch === chatEpoch) partial += delta; };
+      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, onDelta });
+      if (epoch === chatEpoch) messages = [...messages, answer];
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) { partial = ''; chatBusy = false; } }
+  }
+
+  async function cancelChat() {
+    try { await invoke('chat_cancel'); }
+    catch (cause) { chatError = String(cause); }
+  }
+
   async function refreshOwner() {
     try {
       ownerStatus = await invoke<OwnerStatus>('owner_status');
       ownerError = null;
+      if (ownerStatus.unlocked) await loadChat();
     } catch (cause) {
       ownerError = String(cause);
     }
@@ -65,7 +141,10 @@
 
   async function lockOwner() {
     try {
+      if (chatBusy) await cancelChat();
       await invoke('lock_owner');
+      chatEpoch++;
+      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatError = '';
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
@@ -130,6 +209,7 @@
     <span class="pill">{info ? `v${info.version}` : 'conectando…'}</span>
   </header>
 
+  {#if !ownerStatus?.unlocked}
   <section class="intro">
     <div class="intro-text">
       <p>
@@ -143,7 +223,7 @@
     </div>
     <img class="mascot" src="/tina.png" alt="" aria-hidden="true" />
   </section>
-
+  {/if}
 
   <section class="owner-onboarding" aria-label="Conta do proprietário">
     <Card title={ownerStatus?.configured ? 'Acesso do proprietário' : 'Crie sua conta na Tina'}>
@@ -199,6 +279,41 @@
     </Card>
   </section>
 
+  {#if ownerStatus?.unlocked}
+    <section class="chat-shell" aria-label="Chat da Tina">
+      <aside>
+        <h2>Conversas</h2>
+        <button disabled={chatBusy} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; }}>Nova conversa</button>
+        {#each chats as chat (chat.id)}
+          <button disabled={chatBusy} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
+        {/each}
+      </aside>
+      <div class="chat-main">
+        <h2>Tina</h2>
+        {#if !hasKey}
+          <form onsubmit={saveKey}>
+            <label for="nvidia-key">Chave NVIDIA NIM</label>
+            <input id="nvidia-key" type="password" autocomplete="off" required bind:value={apiKey} />
+            <button type="submit">Salvar no cofre Windows</button>
+          </form>
+        {/if}
+        <div class="chat-history" role="log" aria-live="polite">
+          {#if !messages.length}<p>Olá! O que vamos fazer hoje?</p>{/if}
+          {#each messages as message (message.id)}
+            <article><strong>{message.role === 'user' ? 'Você' : 'Tina'}</strong><p>{message.content}</p></article>
+          {/each}
+          {#if partial}<article><strong>Tina</strong><p>{partial}</p></article>{/if}
+        </div>
+        {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
+        <form onsubmit={sendChat}>
+          <label for="chat-draft">Mensagem</label>
+          <textarea id="chat-draft" bind:value={draft} disabled={chatBusy || !hasKey} rows="3"></textarea>
+          <button type="submit" disabled={chatBusy || !hasKey || !draft.trim()}>Enviar</button>
+          {#if chatBusy}<button type="button" onclick={cancelChat}>Interromper</button>{/if}
+        </form>
+      </div>
+    </section>
+  {:else}
   <section class="grid" aria-label="Estado da instalação">
     <Card title="Ambiente desktop">
       {#snippet badge()}
@@ -239,9 +354,18 @@
       recompilam o aplicativo via Tauri.
     </p>
   </footer>
+  {/if}
 </main>
 
 <style>
+  .chat-shell { display: grid; grid-template-columns: minmax(130px, 220px) 1fr; gap: 1rem; }
+  .chat-shell aside, .chat-main { display: flex; flex-direction: column; gap: .75rem; min-width: 0; padding: 1rem; border: 1px solid var(--tina-border); border-radius: 12px; background: var(--tina-surface-tint); }
+  .chat-history { min-height: 220px; max-height: 55vh; overflow: auto; }
+  .chat-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chat-main form { display: flex; flex-direction: column; gap: .5rem; }
+  .chat-shell button, .chat-shell input, .chat-shell textarea { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
+  @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } }
+
   :global(*) {
     box-sizing: border-box;
   }

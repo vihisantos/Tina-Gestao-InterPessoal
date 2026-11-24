@@ -12,6 +12,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: cargo generate-lockfile
       - run: cargo metadata --locked --format-version 1 --no-deps
+      - name: Export generated lockfile
+        shell: pwsh
+        run: |
+          Get-Content Cargo.lock | ForEach-Object { Write-Output ('LOCKFILE|' + $_) }
       - uses: actions/upload-artifact@v4
         with:
           name: chat-cargo-lock

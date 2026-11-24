@@ -237,6 +237,57 @@ impl TinaApp {
         })
     }
 
+    /// Armazena a chave NVIDIA no cofre nativo após autorização.
+    pub fn owner_set_nvidia_key(&self, key: &str) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        if key.is_empty() || key.len() > 4096 || key.chars().any(char::is_whitespace) {
+            return Err(TinaError::Other("chave NVIDIA inválida".into()));
+        }
+        #[cfg(windows)]
+        {
+            let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
+                .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
+            entry
+                .set_password(key)
+                .map_err(|_| TinaError::Other("falha ao salvar chave NVIDIA".into()))
+        }
+        #[cfg(not(windows))]
+        Err(TinaError::Other("cofre NVIDIA requer Windows".into()))
+    }
+
+    /// Verifica a existência da credencial sem retornar seu conteúdo.
+    pub fn owner_has_nvidia_key(&self) -> Result<bool> {
+        self.require_owner(Operation::Read)?;
+        #[cfg(windows)]
+        {
+            let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
+                .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
+            match entry.get_password() {
+                Ok(key) => Ok(!key.is_empty()),
+                Err(keyring::Error::NoEntry) => Ok(false),
+                Err(_) => Err(TinaError::Other("falha ao consultar cofre NVIDIA".into())),
+            }
+        }
+        #[cfg(not(windows))]
+        Err(TinaError::Other("cofre NVIDIA requer Windows".into()))
+    }
+
+    /// Remove a credencial NVIDIA da instalação autenticada.
+    pub fn owner_delete_nvidia_key(&self) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        #[cfg(windows)]
+        {
+            let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
+                .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(_) => Err(TinaError::Other("falha ao remover chave NVIDIA".into())),
+            }
+        }
+        #[cfg(not(windows))]
+        Err(TinaError::Other("cofre NVIDIA requer Windows".into()))
+    }
+
     /// Cria uma conversa principal após validar a sessão do proprietário.
     pub async fn owner_create_chat(&self, title: &str) -> Result<infra::chat::ChatSession> {
         self.require_owner(Operation::Write)?;

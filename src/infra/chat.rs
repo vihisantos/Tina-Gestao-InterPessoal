@@ -214,3 +214,78 @@ mod context_tests {
         }
     }
 }
+
+ 
+/// Decodifica eventos textuais NVIDIA NIM sem expor conteúdo de erro do servidor.
+/// Mantém bytes incompletos entre chunks, inclusive caracteres UTF-8.
+#[derive(Default)]
+pub struct NvidiaStreamDecoder {
+    pending: Vec<u8>,
+    done: bool,
+}
+
+impl NvidiaStreamDecoder {
+    /// Recebe bytes de transporte e devolve fragmentos de texto completos.
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>> {
+        if self.done {
+            return Ok(Vec::new());
+        }
+        if self.pending.len().saturating_add(bytes.len()) > 1_048_576 {
+            return Err(TinaError::Other("evento NVIDIA excede limite".into()));
+        }
+        self.pending.extend_from_slice(bytes);
+        let mut output = Vec::new();
+        while let Some(end) = self.pending.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = self.pending.drain(..=end).collect();
+            let line = std::str::from_utf8(&line)
+                .map_err(|_| TinaError::Other("stream NVIDIA inválido".into()))?;
+            if let Some(data) = line.trim_end_matches(['\r', '\n']).strip_prefix("data:") {
+                let data = data.trim_start();
+                if data == "[DONE]" {
+                    self.done = true;
+                    self.pending.clear();
+                    break;
+                }
+                if !data.is_empty() {
+                    // O JSON será interpretado pelo transporte; não registrar payloads.
+                    output.push(data.to_owned());
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    /// Exige marcador explícito de conclusão, evitando aceitar stream interrompido.
+    pub fn finish(&self) -> Result<()> {
+        if self.done {
+            Ok(())
+        } else {
+            Err(TinaError::Other("stream NVIDIA interrompido".into()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod nvidia_stream_tests {
+    use super::*;
+
+    #[test]
+    fn fragmented_utf8_and_done() {
+        let mut decoder = NvidiaStreamDecoder::default();
+        let data = "data: {\"content\":\"ação\"}\r\n\r\ndata: [DONE]\n\n";
+        let mut events = Vec::new();
+        for byte in data.as_bytes() {
+            events.extend(decoder.push(&[*byte]).unwrap());
+        }
+        assert_eq!(events, vec!["{\"content\":\"ação\"}"]);
+        assert!(decoder.finish().is_ok());
+    }
+
+    #[test]
+    fn rejects_truncated_and_oversized_streams() {
+        let mut decoder = NvidiaStreamDecoder::default();
+        assert!(decoder.push(b"data: incomplete").unwrap().is_empty());
+        assert!(decoder.finish().is_err());
+        assert!(decoder.push(&vec![0; 1_048_577]).is_err());
+    }
+}

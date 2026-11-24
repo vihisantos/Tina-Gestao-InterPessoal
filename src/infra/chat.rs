@@ -289,3 +289,89 @@ mod nvidia_stream_tests {
         assert!(decoder.push(&vec![0; 1_048_577]).is_err());
     }
 }
+
+
+/// Transporte interno NVIDIA. O chamador autenticado resolve modelo e orçamento
+/// a partir do perfil fixo, e obtém a chave do cofre nativo.
+#[allow(dead_code)]
+pub(crate) async fn stream_nvidia(
+    key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    max_tokens: u32,
+    mut cancelled: tokio::sync::watch::Receiver<bool>,
+    mut on_delta: impl FnMut(&str) -> Result<()>,
+) -> Result<String> {
+    if key.is_empty() || model.trim().is_empty() || max_tokens == 0 || messages.is_empty() {
+        return Err(TinaError::Other("configuração NVIDIA inválida".into()));
+    }
+    if *cancelled.borrow() {
+        return Err(TinaError::Other("geração cancelada".into()));
+    }
+    let client = reqwest::Client::builder()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|_| TinaError::Other("cliente NVIDIA indisponível".into()))?;
+    let payload = serde_json::json!({
+        "model": model,
+        "messages": messages.iter().map(|m| serde_json::json!({
+            "role": m.role, "content": m.content
+        })).collect::<Vec<_>>(),
+        "max_tokens": max_tokens,
+        "stream": true
+    });
+    let request = client
+        .post(nvidia_endpoint("https://integrate.api.nvidia.com/v1")?)
+        .bearer_auth(key)
+        .json(&payload);
+    let work = async {
+        let mut response = request.send().await
+            .map_err(|_| TinaError::Other("falha de conexão NVIDIA".into()))?;
+        if !response.status().is_success() {
+            return Err(TinaError::Other(format!("NVIDIA HTTP {}", response.status().as_u16())));
+        }
+        let mut decoder = NvidiaStreamDecoder::default();
+        let mut answer = String::new();
+        while let Some(chunk) = response.chunk().await
+            .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))? {
+            for event in decoder.push(&chunk)? {
+                let value: serde_json::Value = serde_json::from_str(&event)
+                    .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
+                if value.get("error").is_some() {
+                    return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
+                }
+                if let Some(delta) = value.pointer("/choices/0/delta/content")
+                    .and_then(serde_json::Value::as_str) {
+                    if answer.len().saturating_add(delta.len()) > 100_000 {
+                        return Err(TinaError::Other("resposta excede limite local".into()));
+                    }
+                    on_delta(delta)?;
+                    answer.push_str(delta);
+                }
+            }
+            if decoder.done {
+                break;
+            }
+        }
+        decoder.finish()?;
+        if answer.trim().is_empty() {
+            return Err(TinaError::Other("resposta NVIDIA vazia".into()));
+        }
+        Ok(answer)
+    };
+    tokio::select! {
+        biased;
+        _ = async {
+            loop {
+                if *cancelled.borrow() || cancelled.changed().await.is_err() {
+                    break;
+                }
+            }
+        } => Err(TinaError::Other("geração cancelada".into())),
+        result = work => result,
+    }
+}

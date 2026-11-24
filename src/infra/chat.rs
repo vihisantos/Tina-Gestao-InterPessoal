@@ -150,7 +150,6 @@ pub(crate) async fn list_messages(
     .await?)
 }
 
-
 /// Seleciona um sufixo cronológico do histórico dentro de um orçamento em bytes.
 /// A estimativa é conservadora e não substitui o tokenizer do provedor.
 /// Nunca corta uma mensagem nem altera o histórico persistido.

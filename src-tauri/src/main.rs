@@ -48,6 +48,42 @@ fn ping() -> String {
     "pong".to_string()
 }
 
+
+#[tauri::command]
+async fn chat_create(app: State<'_, TinaApp>, title: String) -> Result<tina::infra::chat::ChatSession, String> {
+    app.owner_create_chat(&title).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_list(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::chat::ChatSession>, String> {
+    app.owner_list_chats().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_history(app: State<'_, TinaApp>, session_id: String) -> Result<Vec<tina::infra::chat::ChatMessage>, String> {
+    app.owner_chat_messages(&session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_append(app: State<'_, TinaApp>, session_id: String, content: String) -> Result<tina::infra::chat::ChatMessage, String> {
+    app.owner_append_chat_message(&session_id, &content).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn chat_set_key(app: State<'_, TinaApp>, key: String) -> Result<(), String> {
+    app.owner_set_nvidia_key(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn chat_has_key(app: State<'_, TinaApp>) -> Result<bool, String> {
+    app.owner_has_nvidia_key().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn chat_delete_key(app: State<'_, TinaApp>) -> Result<(), String> {
+    app.owner_delete_nvidia_key().map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -65,6 +101,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             ping,
+            chat_create,
+            chat_list,
+            chat_history,
+            chat_append,
+            chat_set_key,
+            chat_has_key,
+            chat_delete_key,
             commands::owner_status,
             commands::create_owner_account,
             commands::sign_in_owner,

@@ -380,6 +380,14 @@ fn append_nvidia_event(
     if value.get("error").is_some() {
         return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
     }
+    if let Some(reason) = value
+        .pointer("/choices/0/finish_reason")
+        .and_then(serde_json::Value::as_str)
+    {
+        if reason != "stop" {
+            return Err(TinaError::Other("resposta NVIDIA não concluída".into()));
+        }
+    }
     if let Some(delta) = value
         .pointer("/choices/0/delta/content")
         .and_then(serde_json::Value::as_str)
@@ -414,6 +422,21 @@ mod nvidia_event_tests {
         }
         assert_eq!(answer, "Olá!");
         assert_eq!(emitted, answer);
+    }
+
+    #[test]
+    fn rejects_incomplete_finish_reasons() {
+        let mut answer = String::new();
+        for reason in ["length", "content_filter", "tool_calls"] {
+            let event = serde_json::json!({"choices":[{"finish_reason":reason}]});
+            assert!(append_nvidia_event(&event.to_string(), &mut answer, |_| Ok(())).is_err());
+        }
+        assert!(append_nvidia_event(
+            r#"{"choices":[{"finish_reason":"stop"}]}"#,
+            &mut answer,
+            |_| Ok(())
+        )
+        .is_ok());
     }
 
     #[test]

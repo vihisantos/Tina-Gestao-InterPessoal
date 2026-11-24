@@ -149,3 +149,69 @@ pub(crate) async fn list_messages(
     .fetch_all(pool)
     .await?)
 }
+
+ 
+/// Seleciona um sufixo cronológico do histórico dentro de um orçamento em bytes.
+/// A estimativa é conservadora e não substitui o tokenizer do provedor.
+/// Nunca corta uma mensagem nem altera o histórico persistido.
+pub fn context_window(messages: &[ChatMessage], byte_budget: usize) -> &[ChatMessage] {
+    let mut remaining = byte_budget;
+    let mut start = messages.len();
+    for (index, message) in messages.iter().enumerate().rev() {
+        let cost = message.content.len().saturating_add(64);
+        if cost > remaining {
+            break;
+        }
+        remaining -= cost;
+        start = index;
+    }
+    &messages[start..]
+}
+
+/// Aceita exclusivamente o endpoint oficial configurado para NVIDIA NIM.
+/// O transporte HTTP também deve desabilitar redirecionamentos.
+pub fn nvidia_endpoint(base_url: &str) -> Result<&'static str> {
+    if base_url != "https://integrate.api.nvidia.com/v1" {
+        return Err(TinaError::Other("endpoint NVIDIA não autorizado".into()));
+    }
+    Ok("https://integrate.api.nvidia.com/v1/chat/completions")
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    fn message(content: &str) -> ChatMessage {
+        ChatMessage {
+            id: String::new(),
+            role: "user".into(),
+            content: content.into(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn context_preserves_recent_complete_messages() {
+        let messages = vec![message("old"), message("ação"), message("new")];
+        let budget = messages[1].content.len() + messages[2].content.len() + 128;
+        let selected = context_window(&messages, budget);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].content, "ação");
+        assert_eq!(selected[1].content, "new");
+        assert!(context_window(&messages, 1).is_empty());
+        assert_eq!(messages.len(), 3);
+    }
+
+    #[test]
+    fn endpoint_rejects_untrusted_destinations() {
+        assert!(nvidia_endpoint("https://integrate.api.nvidia.com/v1").is_ok());
+        for url in [
+            "http://integrate.api.nvidia.com/v1",
+            "https://integrate.api.nvidia.com.evil.example/v1",
+            "https://integrate.api.nvidia.com@evil.example/v1",
+            "https://integrate.api.nvidia.com/v1?redirect=evil",
+        ] {
+            assert!(nvidia_endpoint(url).is_err());
+        }
+    }
+}

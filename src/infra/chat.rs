@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 /// Conversa persistida, pertencente a uma instalação.
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ChatSession {
     /// Identificador da conversa.
     pub id: String,
@@ -15,7 +15,7 @@ pub struct ChatSession {
 }
 
 /// Mensagem persistida, sem tokens de autenticação.
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ChatMessage {
     /// Identificador da mensagem.
     pub id: String,

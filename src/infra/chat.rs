@@ -215,7 +215,6 @@ mod context_tests {
     }
 }
 
- 
 /// Decodifica eventos textuais NVIDIA NIM sem expor conteúdo de erro do servidor.
 /// Mantém bytes incompletos entre chunks, inclusive caracteres UTF-8.
 #[derive(Default)]
@@ -290,7 +289,6 @@ mod nvidia_stream_tests {
     }
 }
 
-
 /// Transporte interno NVIDIA. O chamador autenticado resolve modelo e orçamento
 /// a partir do perfil fixo, e obtém a chave do cofre nativo.
 #[allow(dead_code)]
@@ -329,23 +327,33 @@ pub(crate) async fn stream_nvidia(
         .bearer_auth(key)
         .json(&payload);
     let work = async {
-        let mut response = request.send().await
+        let mut response = request
+            .send()
+            .await
             .map_err(|_| TinaError::Other("falha de conexão NVIDIA".into()))?;
         if !response.status().is_success() {
-            return Err(TinaError::Other(format!("NVIDIA HTTP {}", response.status().as_u16())));
+            return Err(TinaError::Other(format!(
+                "NVIDIA HTTP {}",
+                response.status().as_u16()
+            )));
         }
         let mut decoder = NvidiaStreamDecoder::default();
         let mut answer = String::new();
-        while let Some(chunk) = response.chunk().await
-            .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))?
+        {
             for event in decoder.push(&chunk)? {
                 let value: serde_json::Value = serde_json::from_str(&event)
                     .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
                 if value.get("error").is_some() {
                     return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
                 }
-                if let Some(delta) = value.pointer("/choices/0/delta/content")
-                    .and_then(serde_json::Value::as_str) {
+                if let Some(delta) = value
+                    .pointer("/choices/0/delta/content")
+                    .and_then(serde_json::Value::as_str)
+                {
                     if answer.len().saturating_add(delta.len()) > 100_000 {
                         return Err(TinaError::Other("resposta excede limite local".into()));
                     }

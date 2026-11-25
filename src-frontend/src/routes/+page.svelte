@@ -36,29 +36,47 @@
   let draft = $state('');
   let partial = $state('');
   let chatBusy = $state(false);
+  let chatLoading = $state(false);
   let chatError = $state('');
   let apiKey = $state('');
   let hasKey = $state(false);
   let chatEpoch = 0;
 
   async function loadChat() {
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
+    const epoch = ++chatEpoch;
+    chatLoading = true;
     try {
-      chats = await invoke<ChatSession[]>('chat_list');
-      hasKey = await invoke<boolean>('chat_has_key');
-      if (chats.length) await openChat(chats[0].id);
-    } catch (cause) { chatError = String(cause); }
+      const list = await invoke<ChatSession[]>('chat_list');
+      const keyAvailable = await invoke<boolean>('chat_has_key');
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      const id = list.find((chat) => chat.id === selected)?.id ?? list[0]?.id ?? '';
+      const history = id ? await invoke<ChatMessage[]>('chat_history', { sessionId: id }) : [];
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      chats = list;
+      hasKey = keyAvailable;
+      selected = id;
+      messages = history;
+      partial = '';
+      chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
   }
 
   async function openChat(id: string) {
-    if (chatBusy) return;
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
     const epoch = ++chatEpoch;
+    chatLoading = true;
     try {
       const history = await invoke<ChatMessage[]>('chat_history', { sessionId: id });
       if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
       selected = id;
       messages = history;
       partial = '';
-    } catch (cause) { chatError = String(cause); }
+      draft = '';
+      chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
   }
 
   async function saveKey(event: SubmitEvent) {
@@ -73,7 +91,7 @@
 
   async function sendChat(event: SubmitEvent) {
     event.preventDefault();
-    if (chatBusy || !draft.trim() || !hasKey) return;
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked || !draft.trim() || !hasKey) return;
     chatBusy = true;
     chatError = '';
     partial = '';
@@ -144,7 +162,7 @@
       if (chatBusy) await cancelChat();
       await invoke('lock_owner');
       chatEpoch++;
-      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatError = '';
+      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; chatError = '';
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
@@ -283,9 +301,9 @@
     <section class="chat-shell" aria-label="Chat da Tina">
       <aside>
         <h2>Conversas</h2>
-        <button disabled={chatBusy} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; }}>Nova conversa</button>
+        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; }}>Nova conversa</button>
         {#each chats as chat (chat.id)}
-          <button disabled={chatBusy} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
+          <button disabled={chatBusy || chatLoading} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
         {/each}
       </aside>
       <div class="chat-main">
@@ -297,7 +315,7 @@
             <button type="submit">Salvar no cofre Windows</button>
           </form>
         {/if}
-        <div class="chat-history" role="log" aria-live="polite">
+        <div class="chat-history" role="log" aria-live="polite" aria-busy={chatLoading}>
           {#if !messages.length}<p>Olá! O que vamos fazer hoje?</p>{/if}
           {#each messages as message (message.id)}
             <article><strong>{message.role === 'user' ? 'Você' : 'Tina'}</strong><p>{message.content}</p></article>
@@ -307,8 +325,8 @@
         {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
         <form onsubmit={sendChat}>
           <label for="chat-draft">Mensagem</label>
-          <textarea id="chat-draft" bind:value={draft} disabled={chatBusy || !hasKey} rows="3"></textarea>
-          <button type="submit" disabled={chatBusy || !hasKey || !draft.trim()}>Enviar</button>
+          <textarea id="chat-draft" bind:value={draft} disabled={chatBusy || chatLoading || !hasKey} rows="3"></textarea>
+          <button type="submit" disabled={chatBusy || chatLoading || !hasKey || !draft.trim()}>Enviar</button>
           {#if chatBusy}<button type="button" onclick={cancelChat}>Interromper</button>{/if}
         </form>
       </div>

@@ -11,8 +11,13 @@ pub const SYSTEM_PROMPT_RESERVE_BYTES: usize = 4096;
 
 /// Orçamento conservador de contexto em bytes.
 pub const CHAT_CONTEXT_BYTES: usize = 8192;
-/// Limite de mensagem de usuário, descontando overhead de contexto.
-pub const MAX_USER_MESSAGE_BYTES: usize = CHAT_CONTEXT_BYTES - 64;
+/// Overhead conservador por mensagem (papel, JSON, metadados de framing).
+pub const MESSAGE_OVERHEAD_BYTES: usize = 64;
+/// Limite de mensagem de usuário, descontando reserva do system prompt e overhead.
+/// Garante que a mensagem mais recente do usuário caiba no orçamento de contexto
+/// junto com o prompt institucional.
+pub const MAX_USER_MESSAGE_BYTES: usize =
+    CHAT_CONTEXT_BYTES - SYSTEM_PROMPT_RESERVE_BYTES - MESSAGE_OVERHEAD_BYTES;
 
 /// Conversa persistida, pertencente a uma instalação.
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
@@ -221,7 +226,7 @@ pub fn context_window(messages: &[ChatMessage], byte_budget: usize) -> &[ChatMes
     let mut remaining = byte_budget;
     let mut start = messages.len();
     for (index, message) in messages.iter().enumerate().rev() {
-        let cost = message.content.len().saturating_add(64);
+        let cost = message.content.len().saturating_add(MESSAGE_OVERHEAD_BYTES);
         if cost > remaining {
             // Sempre preservar a mensagem mais recente do usuário.
             if index + 1 == messages.len() && message.role == "user" {
@@ -359,6 +364,30 @@ mod context_tests {
         assert_eq!(payload[0]["content"], TINA_SYSTEM_PROMPT);
         assert_eq!(payload.last().unwrap()["content"], "pergunta atual");
     }
+
+    #[test]
+    fn user_message_limit_is_consistent_with_context_budget_and_multibyte() {
+        assert_eq!(
+            MAX_USER_MESSAGE_BYTES,
+            CHAT_CONTEXT_BYTES - SYSTEM_PROMPT_RESERVE_BYTES - MESSAGE_OVERHEAD_BYTES
+        );
+        // Mensagem no limite deve caber no orçamento de histórico junto do overhead.
+        let history_budget = CHAT_CONTEXT_BYTES - SYSTEM_PROMPT_RESERVE_BYTES;
+        let max_ascii = "a".repeat(MAX_USER_MESSAGE_BYTES);
+        let ascii_messages = [message("user", &max_ascii)];
+        let selected = context_window(&ascii_messages, history_budget);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].content.len(), MAX_USER_MESSAGE_BYTES);
+
+        // Multibyte UTF-8: 'á' tem 2 bytes; o limite é por bytes, sem corte de char.
+        let multibyte = "á".repeat(MAX_USER_MESSAGE_BYTES / 2);
+        assert_eq!(multibyte.len(), MAX_USER_MESSAGE_BYTES);
+        assert!(std::str::from_utf8(multibyte.as_bytes()).is_ok());
+        let multibyte_messages = [message("user", &multibyte)];
+        let selected = context_window(&multibyte_messages, history_budget);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].content, multibyte);
+    }
 }
 
 /// Decodifica eventos textuais NVIDIA NIM sem expor conteúdo de erro do servidor.
@@ -432,6 +461,21 @@ mod nvidia_stream_tests {
         assert!(decoder.push(b"data: incomplete").unwrap().is_empty());
         assert!(decoder.finish().is_err());
         assert!(decoder.push(&vec![0; 1_048_577]).is_err());
+    }
+
+    #[test]
+    fn stream_decoder_handles_multibyte_utf8_across_chunks() {
+        let mut decoder = NvidiaStreamDecoder::default();
+        let payload = "data: {\"content\":\"Olá 🌸 — café\"}\n\ndata: [DONE]\n";
+        let bytes = payload.as_bytes();
+        let mut events = Vec::new();
+        for chunk in bytes.chunks(3) {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        assert_eq!(events.len(), 1);
+        let value: serde_json::Value = serde_json::from_str(&events[0]).unwrap();
+        assert_eq!(value["content"], "Olá 🌸 — café");
+        assert!(decoder.finish().is_ok());
     }
 }
 

@@ -3,6 +3,11 @@ use crate::error::{Result, TinaError};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+/// Orçamento conservador de contexto em bytes.
+pub const CHAT_CONTEXT_BYTES: usize = 8192;
+/// Limite de mensagem de usuário, descontando overhead de contexto.
+pub const MAX_USER_MESSAGE_BYTES: usize = CHAT_CONTEXT_BYTES - 64;
+
 /// Conversa persistida, pertencente a uma instalação.
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ChatSession {
@@ -32,24 +37,36 @@ pub(crate) async fn create_session(
     installation: &str,
     title: &str,
 ) -> Result<ChatSession> {
+    create_session_with_id(pool, installation, &Uuid::new_v4().to_string(), title).await
+}
+
+pub(crate) async fn create_session_with_id(
+    pool: &SqlitePool,
+    installation: &str,
+    id: &str,
+    title: &str,
+) -> Result<ChatSession> {
     let title = title.trim();
-    if title.is_empty() || title.chars().count() > 120 {
-        return Err(TinaError::Other("título inválido".into()));
+    if title.is_empty() || title.chars().count() > 120 || Uuid::parse_str(id).is_err() {
+        return Err(TinaError::Other("conversa inválida".into()));
     }
-    let id = Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO chat_sessions(id, installation_id, title) VALUES (?, ?, ?)")
-        .bind(&id)
-        .bind(installation)
-        .bind(title)
-        .execute(pool)
-        .await?;
-    Ok(sqlx::query_as(
-        "SELECT id, title, created_at FROM chat_sessions WHERE id = ? AND installation_id = ?",
+    sqlx::query(
+        "INSERT INTO chat_sessions(id, installation_id, title) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
     )
-    .bind(&id)
+    .bind(id)
     .bind(installation)
-    .fetch_one(pool)
-    .await?)
+    .bind(title)
+    .execute(pool)
+    .await?;
+    sqlx::query_as(
+        "SELECT id, title, created_at FROM chat_sessions WHERE id = ? AND installation_id = ? AND title = ?",
+    )
+    .bind(id)
+    .bind(installation)
+    .bind(title)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| TinaError::Unauthorized("identificador de conversa indisponível".into()))
 }
 
 /// Renomeia uma conversa somente dentro da instalação autenticada.
@@ -100,34 +117,68 @@ pub(crate) async fn append_message(
     role: &str,
     content: &str,
 ) -> Result<ChatMessage> {
-    if !matches!(role, "user" | "assistant") || content.trim().is_empty() || content.len() > 100_000
+    append_message_with_id(
+        pool,
+        installation,
+        session,
+        &Uuid::new_v4().to_string(),
+        role,
+        content,
+    )
+    .await
+}
+
+pub(crate) async fn append_message_with_id(
+    pool: &SqlitePool,
+    installation: &str,
+    session: &str,
+    id: &str,
+    role: &str,
+    content: &str,
+) -> Result<ChatMessage> {
+    let limit = if role == "user" {
+        MAX_USER_MESSAGE_BYTES
+    } else {
+        100_000
+    };
+    if !matches!(role, "user" | "assistant")
+        || content.trim().is_empty()
+        || content.len() > limit
+        || Uuid::parse_str(id).is_err()
     {
-        return Err(TinaError::Other("mensagem inválida".into()));
+        return Err(TinaError::Other("mensagem inválida ou extensa demais".into()));
     }
-    let id = Uuid::new_v4().to_string();
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
         "INSERT INTO chat_messages(id, session_id, installation_id, role, content)
          SELECT ?, id, installation_id, ?, ? FROM chat_sessions
-         WHERE id = ? AND installation_id = ?",
+         WHERE id = ? AND installation_id = ? ON CONFLICT(id) DO NOTHING",
     )
-    .bind(&id)
+    .bind(id)
     .bind(role)
     .bind(content)
     .bind(session)
     .bind(installation)
     .execute(&mut *tx)
     .await?;
-    if result.rows_affected() != 1 {
-        return Err(TinaError::Unauthorized(
-            "conversa fora da instalação ou inexistente".into(),
-        ));
+    let message = sqlx::query_as(
+        "SELECT id, role, content, created_at FROM chat_messages
+         WHERE id = ? AND installation_id = ? AND session_id = ? AND role = ? AND content = ?",
+    )
+    .bind(id)
+    .bind(installation)
+    .bind(session)
+    .bind(role)
+    .bind(content)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| TinaError::Unauthorized("identificador de mensagem indisponível".into()))?;
+    if result.rows_affected() == 1 {
+        sqlx::query("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ? AND installation_id = ?")
+            .bind(session).bind(installation).execute(&mut *tx).await?;
     }
-    sqlx::query("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ? AND installation_id = ?")
-        .bind(session).bind(installation).execute(&mut *tx).await?;
     tx.commit().await?;
-    Ok(sqlx::query_as("SELECT id, role, content, created_at FROM chat_messages WHERE id = ? AND installation_id = ?")
-        .bind(&id).bind(installation).fetch_one(pool).await?)
+    Ok(message)
 }
 
 pub(crate) async fn list_messages(

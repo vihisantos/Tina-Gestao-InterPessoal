@@ -297,6 +297,22 @@ impl TinaApp {
         infra::chat::create_session(self.database.pool(), &self.config.installation_id, title).await
     }
 
+    /// Cria ou recupera uma conversa com identificador estável de tentativa.
+    pub async fn owner_create_chat_with_id(
+        &self,
+        id: &str,
+        title: &str,
+    ) -> Result<infra::chat::ChatSession> {
+        self.require_owner(Operation::Write)?;
+        infra::chat::create_session_with_id(
+            self.database.pool(),
+            &self.config.installation_id,
+            id,
+            title,
+        )
+        .await
+    }
+
     /// Renomeia uma conversa da instalação após autorização do proprietário.
     pub async fn owner_rename_chat(
         &self,
@@ -351,6 +367,29 @@ impl TinaApp {
         .await
     }
 
+    /// Persiste uma mensagem de usuário idempotente por identificador de tentativa.
+    pub async fn owner_append_chat_with_id(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        content: &str,
+    ) -> Result<infra::chat::ChatMessage> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("já existe uma geração ativa".into()))?;
+        infra::chat::append_message_with_id(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            message_id,
+            "user",
+            content,
+        )
+        .await
+    }
+
     /// Gera resposta no backend, usando exclusivamente o modelo configurado da Tina.
     /// Uma geração por instalação; respostas incompletas não entram no histórico.
     pub async fn owner_generate_chat(
@@ -380,7 +419,8 @@ impl TinaApp {
                 ));
             }
             let messages = self.owner_chat_messages(session_id).await?;
-            let context = infra::chat::context_window(&messages, 8192);
+            let context =
+                infra::chat::context_window(&messages, infra::chat::CHAT_CONTEXT_BYTES);
             if context.last().map(|m| m.role.as_str()) != Some("user") {
                 return Err(TinaError::Other(
                     "nenhuma mensagem de usuário disponível no contexto".into(),

@@ -50,6 +50,7 @@
   let generating = $state(false);
   let cancelling = $state(false);
   let retryMessageId = $state('');
+  let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
   let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
 
   async function loadChat() {
@@ -167,21 +168,41 @@
     partial = '';
     const epoch = chatEpoch;
     const content = draft;
+    if (new TextEncoder().encode(content).length > 8128) {
+      chatError = 'Mensagem extensa demais. Divida o texto em partes de até 8.128 bytes.';
+      chatBusy = false;
+      return;
+    }
+    const attempt = pendingSend ?? {
+      sessionId: selected || crypto.randomUUID(),
+      messageId: crypto.randomUUID(),
+      content,
+      title: Array.from(content.trim()).slice(0, 80).join(''),
+      creating: !selected
+    };
+    if (attempt.content !== content) {
+      chatError = 'Confirme primeiro o envio anterior sem alterar o texto.';
+      chatBusy = false;
+      return;
+    }
+    pendingSend = attempt;
     try {
-      if (!selected) {
-        const session = await invoke<ChatSession>('chat_create', { title: content.trim().slice(0, 80) });
+      if (attempt.creating) {
+        const session = await invoke<ChatSession>('chat_create', { title: attempt.title, requestId: attempt.sessionId });
         if (epoch !== chatEpoch) return;
         selected = session.id;
-        chats = [session, ...chats];
+        chats = [session, ...chats.filter((c) => c.id !== session.id)];
+        pendingSend = { ...attempt, creating: false };
       }
-      const sessionId = selected;
-      const message = await invoke<ChatMessage>('chat_append', { sessionId, content });
+      const sessionId = attempt.sessionId;
+      const message = await invoke<ChatMessage>('chat_append', { sessionId, content, requestId: attempt.messageId });
       if (epoch !== chatEpoch) return;
-      messages = [...messages, message];
+      messages = [...messages.filter((m) => m.id !== message.id), message];
+      pendingSend = null;
       draft = '';
       await generateAnswer(sessionId, message.id, epoch);
     } catch (cause) {
-      if (epoch === chatEpoch) chatError = String(cause) + ' Confira o histórico antes de reenviar.';
+      if (epoch === chatEpoch) chatError = String(cause) + ' Tente o mesmo envio novamente; a tentativa mantém seu identificador.';
     } finally {
       if (epoch === chatEpoch) { partial = ''; chatBusy = false; }
     }
@@ -226,7 +247,7 @@
     chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = '';
     hasKey = false; chatBusy = false; chatLoading = false; generating = false;
     cancelling = false; retryMessageId = ''; renaming = false; renameDraft = '';
-    chatError = ''; info = null; ownerPassword = ''; ownerConfirm = '';
+    chatError = ''; info = null; ownerPassword = ''; ownerConfirm = ''; pendingSend = null;
   }
 
   async function verifySession() {
@@ -463,9 +484,9 @@
     <section class="chat-shell" aria-label="Chat da Tina">
       <aside>
         <h2>Conversas</h2>
-        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
+        <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
         {#each chats as chat (chat.id)}
-          <button disabled={chatBusy || chatLoading} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
+          <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
         {/each}
       </aside>
       <div class="chat-main">
@@ -479,7 +500,7 @@
               <button type="button" disabled={chatLoading} onclick={() => { renaming = false; renameDraft = ''; }}>Cancelar</button>
             </form>
           {:else}
-            <button disabled={chatBusy || chatLoading} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
+            <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
           {/if}
         {/if}
         {#if !hasKey}
@@ -496,7 +517,7 @@
         {#if retryAvailable && !chatBusy}
           <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
         {/if}
-        <ChatComposer bind:draft disabled={chatLoading || !hasKey} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
+        <ChatComposer bind:draft disabled={chatLoading || !hasKey} readOnly={!!pendingSend} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
       </div>
     </section>
   {:else}

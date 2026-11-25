@@ -52,8 +52,9 @@ fn ping() -> String {
 async fn chat_create(
     app: State<'_, TinaApp>,
     title: String,
+    request_id: String,
 ) -> Result<tina::infra::chat::ChatSession, String> {
-    app.owner_create_chat(&title)
+    app.owner_create_chat_with_id(&request_id, &title)
         .await
         .map_err(|e| e.to_string())
 }
@@ -89,8 +90,9 @@ async fn chat_append(
     app: State<'_, TinaApp>,
     session_id: String,
     content: String,
+    request_id: String,
 ) -> Result<tina::infra::chat::ChatMessage, String> {
-    app.owner_append_chat_message(&session_id, &content)
+    app.owner_append_chat_with_id(&session_id, &request_id, &content)
         .await
         .map_err(|e| e.to_string())
 }

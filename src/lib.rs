@@ -735,6 +735,75 @@ impl TinaApp {
             .await
     }
 
+    /// Atualiza informações do funcionário com auditoria transacional
+    pub async fn owner_update_employee_info(
+        &self,
+        employee_id: &str,
+        name: &str,
+        responsibilities: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ? AND c.status = 'active'
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        
+        let company_id = company_id.ok_or_else(|| {
+            TinaError::Other("Funcionário não encontrado".to_string())
+        })?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .update_info_as_owner(employee_id, installation_id, owner_id, &company_id, name, responsibilities)
+            .await
+    }
+
+    /// Atualiza responsabilidades do funcionário com auditoria transacional
+    pub async fn owner_update_employee_responsibilities(
+        &self,
+        employee_id: &str,
+        responsibilities: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ? AND c.status = 'active'
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        
+        let company_id = company_id.ok_or_else(|| {
+            TinaError::Other("Funcionário não encontrado".to_string())
+        })?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .update_responsibilities_as_owner(employee_id, installation_id, owner_id, &company_id, responsibilities)
+            .await
+    }
+
     /// Desativa funcionário com auditoria transacional
     pub async fn owner_deactivate_employee(
         &self,
@@ -808,6 +877,12 @@ impl TinaApp {
         company_id: Option<&str>,
         limit: i64,
     ) -> Result<Vec<infra::audit::AuditEvent>> {
+        // Primeiro registrar a tentativa de leitura
+        infra::audit::record_denied_owner_audit_read(
+            self.database.pool(),
+            &self.config.installation_id,
+        ).await?;
+        
         self.require_owner(Operation::Read)?;
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));
@@ -833,6 +908,12 @@ impl TinaApp {
         before_id: &str,
         limit: i64,
     ) -> Result<Vec<infra::audit::AuditEvent>> {
+        // Primeiro registrar a tentativa de leitura
+        infra::audit::record_denied_owner_audit_read(
+            self.database.pool(),
+            &self.config.installation_id,
+        ).await?;
+        
         self.require_owner(Operation::Read)?;
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));

@@ -76,38 +76,14 @@ fn get_installation_id(state: &TinaApp) -> String {
     state.config().installation_id.clone()
 }
 
-/// Cria um novo funcionário associado a um cargo existente da instalação
+/// Cria um novo funcionário associado a um cargo existente da instalação (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn create_employee(
     state: State<'_, TinaApp>,
     request: CreateEmployeeRequest,
 ) -> Result<EmployeeDto, String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    // Validar que o cargo existe, está ativo e pertence à instalação
-    let position_company =
-        get_position_company_and_validate(&db, &request.position_id, &installation_id).await?;
-
-    // Se houver supervisor, validar que está ativo e pertence à mesma empresa
-    if let Some(sup_id) = &request.supervisor_id {
-        let supervisor_ok = repo
-            .is_active_in_company(sup_id, &position_company.company_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if !supervisor_ok {
-            return Err(
-                "Supervisor não encontrado, inativo ou não pertence à mesma empresa".to_string(),
-            );
-        }
-    }
-
-    let employee = repo
-        .create(
+    let employee = state
+        .owner_create_employee(
             &request.position_id,
             &request.name,
             request.responsibilities.as_deref(),
@@ -197,56 +173,39 @@ pub async fn list_employees_by_department(
     Ok(employees.into_iter().map(EmployeeDto::from).collect())
 }
 
-/// Atualiza nome e responsabilidades do funcionário
+/// Atualiza nome e responsabilidades do funcionário (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
     request: UpdateEmployeeRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
+    state
+        .owner_update_employee_info(
+            &employee_id,
+            &request.name,
+            request.responsibilities.as_deref(),
+        )
+        .await
         .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    // Obter company_id do funcionário via cadeia
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    repo.update_info(
-        &employee_id,
-        &company_id,
-        &request.name,
-        request.responsibilities.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
-/// Atualiza apenas as responsabilidades do funcionário
+/// Atualiza apenas as responsabilidades do funcionário (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_employee_responsibilities(
     state: State<'_, TinaApp>,
     employee_id: String,
     request: UpdateResponsibilitiesRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
+    state
+        .owner_update_employee_responsibilities(
+            &employee_id,
+            request.responsibilities.as_deref(),
+        )
+        .await
         .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    repo.update_responsibilities(
-        &employee_id,
-        &company_id,
-        request.responsibilities.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -311,46 +270,22 @@ pub async fn assign_employee_supervisor(
     Ok(())
 }
 
-/// Desativa um funcionário (preserva histórico, não exclui fisicamente)
+/// Desativa um funcionário (preserva histórico, não exclui fisicamente) - com auditoria de autoria transacional
 #[tauri::command]
 pub async fn deactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    repo.deactivate(&employee_id, &company_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    state.owner_deactivate_employee(&employee_id).await.map_err(|e| e.to_string())
 }
 
-/// Reativa um funcionário previamente desativado
+/// Reativa um funcionário previamente desativado - com auditoria de autoria transacional
 #[tauri::command]
 pub async fn reactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    repo.reactivate(&employee_id, &company_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    state.owner_reactivate_employee(&employee_id).await.map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

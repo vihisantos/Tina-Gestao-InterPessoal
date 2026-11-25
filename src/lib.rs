@@ -488,4 +488,17 @@ impl TinaApp {
     pub(crate) fn database(&self) -> &Database {
         &self.database
     }
+
+    /// Força expiração da sessão para teste isolado de geração.
+    #[cfg(test)]
+    pub fn expire_owner_session_for_test(&self) -> Result<()> {
+        self.owner_access.expire_session_for_test()
+    }
+
+    /// Autentica sessão em teste isolado, sem depender de cofre Windows.
+    #[cfg(test)]
+    pub fn unlock_owner_for_test(&self) -> Result<()> {
+        self.owner_access
+            .unlock_for_test(self.config.security.session_timeout_seconds)
+    }
 }

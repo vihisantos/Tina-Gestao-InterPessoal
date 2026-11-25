@@ -339,19 +339,23 @@ pub(crate) async fn stream_nvidia(
         }
         let mut decoder = NvidiaStreamDecoder::default();
         let mut answer = String::new();
+        let mut stopped = false;
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))?
         {
             for event in decoder.push(&chunk)? {
-                append_nvidia_event(&event, &mut answer, &mut on_delta)?;
+                stopped |= append_nvidia_event(&event, &mut answer, &mut on_delta)?;
             }
             if decoder.done {
                 break;
             }
         }
         decoder.finish()?;
+        if !stopped {
+            return Err(TinaError::Other("NVIDIA não confirmou conclusão".into()));
+        }
         if answer.trim().is_empty() {
             return Err(TinaError::Other("resposta NVIDIA vazia".into()));
         }
@@ -374,12 +378,13 @@ fn append_nvidia_event(
     event: &str,
     answer: &mut String,
     mut on_delta: impl FnMut(&str) -> Result<()>,
-) -> Result<()> {
+) -> Result<bool> {
     let value: serde_json::Value = serde_json::from_str(event)
         .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
     if value.get("error").is_some() {
         return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
     }
+    let mut stopped = false;
     if let Some(reason) = value
         .pointer("/choices/0/finish_reason")
         .and_then(serde_json::Value::as_str)
@@ -387,6 +392,7 @@ fn append_nvidia_event(
         if reason != "stop" {
             return Err(TinaError::Other("resposta NVIDIA não concluída".into()));
         }
+        stopped = true;
     }
     if let Some(delta) = value
         .pointer("/choices/0/delta/content")
@@ -398,7 +404,7 @@ fn append_nvidia_event(
         on_delta(delta)?;
         answer.push_str(delta);
     }
-    Ok(())
+    Ok(stopped)
 }
 
 #[cfg(test)]
@@ -422,6 +428,23 @@ mod nvidia_event_tests {
         }
         assert_eq!(answer, "Olá!");
         assert_eq!(emitted, answer);
+    }
+
+    #[test]
+    fn only_explicit_stop_confirms_completion() {
+        let mut answer = String::new();
+        assert!(!append_nvidia_event(
+            r#"{"choices":[{"delta":{"content":"partial"}}]}"#,
+            &mut answer,
+            |_| Ok(())
+        )
+        .unwrap());
+        assert!(append_nvidia_event(
+            r#"{"choices":[{"finish_reason":"stop"}]}"#,
+            &mut answer,
+            |_| Ok(())
+        )
+        .unwrap());
     }
 
     #[test]

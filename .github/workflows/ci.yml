@@ -120,3 +120,6 @@ jobs:
 
       - name: Build frontend
         run: npm run frontend:build
+
+      - name: Run frontend regression tests
+        run: npm run frontend:test

@@ -64,6 +64,17 @@ async fn chat_list(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::chat::Cha
 }
 
 #[tauri::command]
+async fn chat_rename(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    title: String,
+) -> Result<tina::infra::chat::ChatSession, String> {
+    app.owner_rename_chat(&session_id, &title)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn chat_history(
     app: State<'_, TinaApp>,
     session_id: String,
@@ -176,6 +187,7 @@ fn main() {
             chat_create,
             chat_list,
             chat_history,
+            chat_rename,
             chat_append,
             chat_generate,
             chat_cancel,

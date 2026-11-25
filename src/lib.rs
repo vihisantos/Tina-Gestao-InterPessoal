@@ -431,7 +431,9 @@ impl TinaApp {
                 ));
             }
             let messages = self.owner_chat_messages(session_id).await?;
-            let context = infra::chat::context_window(&messages, infra::chat::CHAT_CONTEXT_BYTES);
+            let history_budget = infra::chat::CHAT_CONTEXT_BYTES
+                .saturating_sub(infra::chat::SYSTEM_PROMPT_RESERVE_BYTES);
+            let context = infra::chat::context_window(&messages, history_budget);
             if context.last().map(|m| m.role.as_str()) != Some("user") {
                 return Err(TinaError::Other(
                     "nenhuma mensagem de usuário disponível no contexto".into(),

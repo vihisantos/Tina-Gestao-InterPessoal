@@ -350,6 +350,74 @@ impl<'a> HierarchyService<'a> {
         }
     }
 
+    /// Define supervisor com autoria transacional.
+    ///
+    /// Similar a [`Self::set_supervisor`] mas insere/remover o contexto de
+    /// auditoria antes/depois da operação, permitindo que os triggers capturem
+    /// o actor correto. O `owner_uuid` deve ser o UUID do proprietário da
+    /// instalação.
+    pub async fn set_supervisor_with_owner(
+        &self,
+        employee_id: &str,
+        company_id: &str,
+        installation_id: &str,
+        owner_uuid: &str,
+        new_supervisor_id: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<SupervisorChange> {
+        let mut conn = self.pool.acquire().await?;
+        
+        // Inserir contexto de auditoria antes da transação
+        let inserted = sqlx::query(
+            "INSERT INTO organizational_audit_actor_context (installation_id, actor_id) \
+             SELECT id, owner_uuid FROM installations WHERE id = ? AND owner_uuid = ?",
+        )
+        .bind(installation_id)
+        .bind(owner_uuid)
+        .execute(&mut *conn)
+        .await?;
+        
+        if inserted.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized(
+                "identidade de auditoria inválida".into(),
+            ));
+        }
+        
+        sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+
+        let outcome = self
+            .apply_supervisor_change(
+                &mut conn,
+                employee_id,
+                company_id,
+                new_supervisor_id,
+                reason,
+                Some(owner_uuid), // Passar owner_id para histórico
+            )
+            .await;
+
+        match outcome {
+            Ok(change) => {
+                // Remover contexto antes do COMMIT
+                sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
+                    .bind(installation_id)
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("COMMIT").execute(&mut *conn).await?;
+                Ok(change)
+            }
+            Err(error) => {
+                // Remover contexto antes do ROLLBACK
+                let _ = sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
+                    .bind(installation_id)
+                    .execute(&mut *conn)
+                    .await;
+                let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                Err(error)
+            }
+        }
+    }
+
     async fn apply_supervisor_change(
         &self,
         conn: &mut SqliteConnection,

@@ -941,19 +941,27 @@ impl TinaApp {
         company_id: Option<&str>,
         limit: i64,
     ) -> Result<Vec<infra::audit::AuditEvent>> {
-        // Primeiro registrar a tentativa de leitura
-        infra::audit::record_denied_owner_audit_read(
-            self.database.pool(),
-            &self.config.installation_id,
-        ).await?;
+        // Verificar sessão antes de qualquer operação
+        let pool = self.database.pool();
+        let installation_id = self.config.installation_id.clone();
         
-        self.require_owner(Operation::Read)?;
+        if !self.owner_access.is_unlocked()? {
+            // Registrar tentativa de acesso negada apenas quando falha
+            infra::audit::record_denied_owner_audit_read(
+                pool,
+                &installation_id,
+            ).await?;
+            return Err(TinaError::Unauthorized(
+                "sessão do proprietário bloqueada".into(),
+            ));
+        }
+        
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));
         }
         if let Some(cid) = company_id {
-            let belongs = infra::CompanyRepository::new(self.database.pool())
-                .belongs_to_installation(cid, &self.config.installation_id)
+            let belongs = infra::CompanyRepository::new(pool)
+                .belongs_to_installation(cid, &installation_id)
                 .await?;
             if !belongs {
                 return Err(TinaError::Unauthorized(
@@ -961,7 +969,7 @@ impl TinaApp {
                 ));
             }
         }
-        infra::audit::list_events(self.database.pool(), &self.config.installation_id, company_id, limit)
+        infra::audit::list_events(pool, &installation_id, company_id, limit)
             .await
     }
 
@@ -972,19 +980,27 @@ impl TinaApp {
         before_id: &str,
         limit: i64,
     ) -> Result<Vec<infra::audit::AuditEvent>> {
-        // Primeiro registrar a tentativa de leitura
-        infra::audit::record_denied_owner_audit_read(
-            self.database.pool(),
-            &self.config.installation_id,
-        ).await?;
+        // Verificar sessão antes de qualquer operação
+        let pool = self.database.pool();
+        let installation_id = self.config.installation_id.clone();
         
-        self.require_owner(Operation::Read)?;
+        if !self.owner_access.is_unlocked()? {
+            // Registrar tentativa de acesso negada apenas quando falha
+            infra::audit::record_denied_owner_audit_read(
+                pool,
+                &installation_id,
+            ).await?;
+            return Err(TinaError::Unauthorized(
+                "sessão do proprietário bloqueada".into(),
+            ));
+        }
+        
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));
         }
         if let Some(cid) = company_id {
-            let belongs = infra::CompanyRepository::new(self.database.pool())
-                .belongs_to_installation(cid, &self.config.installation_id)
+            let belongs = infra::CompanyRepository::new(pool)
+                .belongs_to_installation(cid, &installation_id)
                 .await?;
             if !belongs {
                 return Err(TinaError::Unauthorized(
@@ -993,8 +1009,8 @@ impl TinaApp {
             }
         }
         infra::audit::list_events_before(
-            self.database.pool(),
-            &self.config.installation_id,
+            pool,
+            &installation_id,
             company_id,
             before_id,
             limit,

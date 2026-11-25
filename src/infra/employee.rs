@@ -702,7 +702,7 @@ impl<'a> EmployeeRepository<'a> {
         }
 
         crate::infra::HierarchyService::new(self.pool)
-            .set_supervisor(employee_id, company_id, supervisor_id, None, None)
+            .set_supervisor_with_owner(employee_id, company_id, installation_id, owner_id, supervisor_id, None)
             .await?;
 
         Ok(())

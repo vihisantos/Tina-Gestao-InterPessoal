@@ -528,3 +528,122 @@ async fn audit_events_cannot_be_modified_or_deleted() {
     drop(app);
     let _ = std::fs::remove_file(file);
 }
+
+// ============================================================================
+// Testes de regressão para problemas identificados
+// ============================================================================
+
+#[tokio::test]
+async fn update_supervisor_as_owner_creates_proper_audit_event() {
+    // Teste: update_supervisor_as_owner deve usar begin_owner_write/commit_owner_write
+    // para criar eventos de auditoria com o actor correto
+    let file = std::env::temp_dir().join(format!("tina-audit-supervisor-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&file, "supervisor-install", "supervisor-owner")
+        .await
+        .unwrap();
+
+    let pool = app.database().pool();
+
+    // Desbloquear sessão para operações autorizadas
+    app.unlock_owner_for_test().unwrap();
+
+    // Criar empresa, departamento, cargo
+    let company = CompanyRepository::new(pool).create("supervisor-install", "Empresa Teste").await.unwrap();
+    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT-001", "Teste", None).await.unwrap();
+    let position = PositionRepository::new(pool).create(&dept.id, "Cargo 1", 1, 1, None).await.unwrap();
+    
+    let emp1 = crate::infra::EmployeeRepository::new(pool)
+        .create_as_owner("supervisor-install", "supervisor-owner", &position.id, "Funcionário 1", None, None)
+        .await.unwrap();
+
+    // Criar segundo funcionário para ser supervisor (não auto-supervisão)
+    let position2 = PositionRepository::new(pool).create(&dept.id, "Cargo 2", 2, 2, None).await.unwrap();
+    let emp2 = crate::infra::EmployeeRepository::new(pool)
+        .create_as_owner("supervisor-install", "supervisor-owner", &position2.id, "Funcionário 2", None, None)
+        .await.unwrap();
+
+    // Atualizar supervisor (emp1 sob emp2)
+    app.owner_update_employee_supervisor(&emp1.id, Some(&emp2.id))
+        .await
+        .unwrap();
+
+    // Verificar se o evento foi criado com actor correto
+    let events = crate::infra::audit::list_events(pool, "supervisor-install", None, 10)
+        .await
+        .unwrap();
+
+    let update_event = events.iter().find(|e| e.entity_type == "employee" && e.action == "updated");
+    assert!(update_event.is_some(), "Deve existir evento de atualização");
+    let event = update_event.unwrap();
+    assert_eq!(event.actor_type.as_deref(), Some("owner"), "Actor type deve ser 'owner'");
+    assert_eq!(event.actor_id.as_deref(), Some("supervisor-owner"), "Actor ID deve ser o owner UUID");
+
+    drop(app);
+    let _ = std::fs::remove_file(file);
+}
+
+#[tokio::test]
+async fn audit_query_does_not_create_denied_event_for_authorized_session() {
+    // Teste: owner_audit_events não deve registrar denied antes da autorização
+    // Quando a sessão está ativa, não deve criar eventos denied
+    let file = std::env::temp_dir().join(format!("tina-audit-query-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&file, "query-install", "query-owner")
+        .await
+        .unwrap();
+
+    app.unlock_owner_for_test().unwrap();
+
+    let initial_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM organizational_audit_events WHERE installation_id = ?",
+    )
+    .bind("query-install")
+    .fetch_one(app.database().pool())
+    .await
+    .unwrap();
+
+    // Consulta autorizada deve funcionar sem criar denied event
+    let _ = app.owner_audit_events(None, 10).await.unwrap();
+
+    let final_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM organizational_audit_events WHERE installation_id = ? AND outcome = 'denied'",
+    )
+    .bind("query-install")
+    .fetch_one(app.database().pool())
+    .await
+    .unwrap();
+
+    assert_eq!(final_events, 0, "Não deve criar eventos denied para sessão autorizada");
+
+    drop(app);
+    let _ = std::fs::remove_file(file);
+}
+
+#[tokio::test] 
+async fn denied_operations_are_auditied() {
+    // Teste: Operações administrativas negadas devem ser auditadas
+    let file = std::env::temp_dir().join(format!("tina-audit-denied-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&file, "denied-install", "denied-owner")
+        .await
+        .unwrap();
+
+    // Não chamar unlock_owner_for_test - sessão está bloqueada
+
+    // Tentar listar auditoria sem sessão ativa deve registrar denied
+    let _ = app.owner_audit_events(None, 10).await;
+
+    // Verificar se foi criado um evento denied
+    let denied_events: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT outcome, actor_type, actor_id FROM organizational_audit_events
+         WHERE installation_id = ? AND entity_type = 'audit' AND action = 'read'",
+    )
+    .bind("denied-install")
+    .fetch_all(app.database().pool())
+    .await
+    .unwrap();
+
+    // Deve ter pelo menos 1 evento denied
+    assert!(!denied_events.is_empty(), "Deve registrar evento denied para sessão bloqueada");
+
+    drop(app);
+    let _ = std::fs::remove_file(file);
+}

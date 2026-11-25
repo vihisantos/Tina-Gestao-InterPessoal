@@ -112,16 +112,73 @@ fn chat_delete_key(app: State<'_, TinaApp>) -> Result<(), String> {
     app.owner_delete_nvidia_key().map_err(|e| e.to_string())
 }
 
-#[derive(Default)]
-struct ChatRun(std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>>);
+struct ActiveRun {
+    id: String,
+    cancel: tokio::sync::watch::Sender<bool>,
+    receiver: Option<tokio::sync::watch::Receiver<bool>>,
+}
 
-struct ChatRunGuard<'a>(&'a ChatRun);
+#[derive(Default)]
+struct ChatRun(std::sync::Mutex<Option<ActiveRun>>);
+
+impl ChatRun {
+    fn prepare(&self, id: String) -> Result<(), String> {
+        let mut active = self.0.lock().map_err(|_| "estado de chat indisponível")?;
+        if active.is_some() {
+            return Err("já existe uma geração ativa".into());
+        }
+        let (cancel, receiver) = tokio::sync::watch::channel(false);
+        *active = Some(ActiveRun {
+            id,
+            cancel,
+            receiver: Some(receiver),
+        });
+        Ok(())
+    }
+
+    fn claim(&self, id: &str) -> Result<tokio::sync::watch::Receiver<bool>, String> {
+        let mut active = self.0.lock().map_err(|_| "estado de chat indisponível")?;
+        active
+            .as_mut()
+            .filter(|entry| entry.id == id)
+            .and_then(|entry| entry.receiver.take())
+            .ok_or_else(|| "geração inexistente ou já iniciada".into())
+    }
+
+    fn cancel(&self, id: Option<&str>) -> Result<(), String> {
+        let mut active = self.0.lock().map_err(|_| "estado de chat indisponível")?;
+        if let Some(entry) = active.as_ref() {
+            if id.is_none_or(|id| entry.id == id) {
+                let _ = entry.cancel.send(true);
+                if entry.receiver.is_some() {
+                    *active = None;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+struct ChatRunGuard<'a>(&'a ChatRun, &'a str);
 impl Drop for ChatRunGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut active) = self.0 .0.lock() {
-            *active = None;
+            if active.as_ref().is_some_and(|entry| entry.id == self.1) {
+                *active = None;
+            }
         }
     }
+}
+
+#[tauri::command]
+fn chat_prepare(
+    app: State<'_, TinaApp>,
+    run: State<'_, ChatRun>,
+    run_id: String,
+) -> Result<(), String> {
+    app.require_owner(tina::core::authorization::Operation::Write)
+        .map_err(|e| e.to_string())?;
+    run.prepare(run_id)
 }
 
 #[tauri::command]
@@ -129,22 +186,13 @@ async fn chat_generate(
     app: State<'_, TinaApp>,
     run: State<'_, ChatRun>,
     session_id: String,
+    run_id: String,
     on_delta: tauri::ipc::Channel<String>,
 ) -> Result<tina::infra::chat::ChatMessage, String> {
+    let rx = run.claim(&run_id)?;
+    let _guard = ChatRunGuard(run.inner(), &run_id);
     app.require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let (tx, rx) = tokio::sync::watch::channel(false);
-    {
-        let mut active = run
-            .0
-            .lock()
-            .map_err(|_| "estado de chat indisponível".to_string())?;
-        if active.is_some() {
-            return Err("já existe uma geração ativa".into());
-        }
-        *active = Some(tx);
-    }
-    let _guard = ChatRunGuard(run.inner());
     app.owner_generate_chat(&session_id, rx, |delta| {
         on_delta
             .send(delta.to_owned())
@@ -155,17 +203,36 @@ async fn chat_generate(
 }
 
 #[tauri::command]
-fn chat_cancel(app: State<'_, TinaApp>, run: State<'_, ChatRun>) -> Result<(), String> {
+fn chat_cancel(
+    app: State<'_, TinaApp>,
+    run: State<'_, ChatRun>,
+    run_id: String,
+) -> Result<(), String> {
     app.require_owner(tina::core::authorization::Operation::Write)
         .map_err(|e| e.to_string())?;
-    let active = run
-        .0
-        .lock()
-        .map_err(|_| "estado de chat indisponível".to_string())?;
-    if let Some(tx) = active.as_ref() {
-        let _ = tx.send(true);
+    run.cancel(Some(&run_id))
+}
+
+#[cfg(test)]
+mod chat_run_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_before_claim_and_stale_cancellation_are_safe() {
+        let run = ChatRun::default();
+        run.prepare("first".into()).unwrap();
+        run.cancel(Some("first")).unwrap();
+        assert!(run.claim("first").is_err());
+        run.prepare("second".into()).unwrap();
+        run.cancel(Some("first")).unwrap();
+        let receiver = run.claim("second").unwrap();
+        assert!(!*receiver.borrow());
+        assert!(run.claim("second").is_err());
+        run.cancel(None).unwrap();
+        assert!(*receiver.borrow());
+        drop(ChatRunGuard(&run, "second"));
+        assert!(run.prepare("third".into()).is_ok());
     }
-    Ok(())
 }
 
 fn main() {
@@ -191,6 +258,7 @@ fn main() {
             chat_history,
             chat_rename,
             chat_append,
+            chat_prepare,
             chat_generate,
             chat_cancel,
             chat_set_key,

@@ -411,6 +411,16 @@ impl TinaApp {
         }
         #[cfg(windows)]
         {
+            let session_marker = self
+                .owner_access
+                .session_marker()?
+                .ok_or_else(|| TinaError::Unauthorized("sessão bloqueada".into()))?;
+            let check_session = || {
+                if self.owner_access.session_marker()? != Some(session_marker) {
+                    return Err(TinaError::Unauthorized("sessão alterada ou expirada".into()));
+                }
+                Ok(())
+            };
             let settings = &self.config.nvidia;
             infra::chat::nvidia_endpoint(&settings.base_url)?;
             if settings.max_tokens == 0 || settings.max_tokens > 4096 {
@@ -432,18 +442,29 @@ impl TinaApp {
                 .get_password()
                 .map_err(|_| TinaError::Other("configure a chave NVIDIA".into()))?;
             self.require_owner(Operation::Write)?;
-            let answer = infra::chat::stream_nvidia(
-                &key,
-                &settings.default_model,
-                context,
-                settings.max_tokens,
-                cancelled.clone(),
-                |delta| {
-                    self.require_owner(Operation::Read)?;
-                    on_delta(delta)
-                },
-            )
-            .await?;
+            check_session()?;
+            let answer = tokio::select! {
+                result = infra::chat::stream_nvidia(
+                    &key,
+                    &settings.default_model,
+                    context,
+                    settings.max_tokens,
+                    cancelled.clone(),
+                    |delta| {
+                        check_session()?;
+                        on_delta(delta)
+                    },
+                ) => result?,
+                result = async {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        if let Err(error) = check_session() {
+                            break Err::<String, _>(error);
+                        }
+                    }
+                } => result?,
+            };
+            check_session()?;
             self.require_owner(Operation::Write)?;
             if *cancelled.borrow() {
                 return Err(TinaError::Other("geração cancelada".into()));

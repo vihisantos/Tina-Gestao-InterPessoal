@@ -50,6 +50,7 @@
   let generating = $state(false);
   let cancelling = $state(false);
   let retryMessageId = $state('');
+  let runId = '';
   let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
   let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
 
@@ -128,14 +129,18 @@
   }
 
   async function generateAnswer(sessionId: string, userId: string, epoch: number) {
-    generating = true;
+    const id = crypto.randomUUID();
+    runId = id;
     retryMessageId = '';
     const onDelta = new Channel<string>();
     onDelta.onmessage = (delta) => {
       if (epoch === chatEpoch && generating && !cancelling) partial += delta;
     };
     try {
-      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, onDelta });
+      await invoke('chat_prepare', { runId: id });
+      if (epoch !== chatEpoch) return;
+      generating = true;
+      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, runId: id, onDelta });
       if (epoch === chatEpoch) {
         messages = [...messages.filter((m) => m.id !== answer.id), answer];
         chatError = '';
@@ -156,7 +161,8 @@
         if (epoch === chatEpoch) chatError += ' Não foi possível confirmar o histórico. Reabra a conversa antes de tentar novamente.';
       }
     } finally {
-      if (epoch === chatEpoch) { generating = false; cancelling = false; partial = ''; }
+      await invoke('chat_cancel', { runId: id }).catch(() => {});
+      if (epoch === chatEpoch) { runId = ''; generating = false; cancelling = false; partial = ''; }
     }
   }
 
@@ -236,7 +242,7 @@
     if (!generating || cancelling) return;
     const epoch = chatEpoch;
     cancelling = true;
-    try { await invoke('chat_cancel'); }
+    try { await invoke('chat_cancel', { runId }); }
     catch (cause) {
       if (epoch === chatEpoch) { chatError = String(cause); cancelling = false; }
     }
@@ -246,7 +252,7 @@
     chatEpoch++;
     chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = '';
     hasKey = false; chatBusy = false; chatLoading = false; generating = false;
-    cancelling = false; retryMessageId = ''; renaming = false; renameDraft = '';
+    cancelling = false; retryMessageId = ''; runId = ''; renaming = false; renameDraft = '';
     chatError = ''; info = null; ownerPassword = ''; ownerConfirm = ''; pendingSend = null;
   }
 
@@ -328,11 +334,9 @@
     if (ownerBusy) return;
     ownerBusy = true;
     ownerEpoch++;
-    const cancel = chatBusy && generating;
     clearPrivateState();
     ownerStatus = { configured: true, unlocked: false, displayName: null };
     try {
-      if (cancel) await invoke('chat_cancel').catch(() => {});
       await invoke('lock_owner');
       await refreshOwner();
       await loadBootstrap();

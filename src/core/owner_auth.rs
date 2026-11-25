@@ -441,6 +441,23 @@ impl OwnerAccess {
         Ok(session.unlocked)
     }
 
+    /// Identidade temporal da sessão atual, sem expor a credencial.
+    pub(crate) fn session_marker(&self) -> Result<Option<Instant>> {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        if !session.unlocked
+            || session
+                .expires_at
+                .is_none_or(|expiry| expiry <= Instant::now())
+        {
+            *session = Session::default();
+            return Ok(None);
+        }
+        Ok(session.expires_at)
+    }
+
     /// Encerra a sessão imediatamente.
     pub fn lock(&self) -> Result<()> {
         let mut session = self

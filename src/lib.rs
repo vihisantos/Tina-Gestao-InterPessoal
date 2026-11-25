@@ -80,7 +80,7 @@ impl TinaApp {
     /// Carrega configuração, garante os diretórios locais, abre/cria o SQLite
     /// aplica as migrations e garante que a instalação exista no banco.
     pub async fn initialize() -> Result<Self> {
-        let config = Arc::new(config::load_config()?);
+        let config = Arc::new(config::load_config().await?);
         config.ensure_directories()?;
 
         let database = Database::open(&config.database_path).await?;

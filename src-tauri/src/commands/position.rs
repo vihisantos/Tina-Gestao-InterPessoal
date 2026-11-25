@@ -162,7 +162,7 @@ pub async fn create_position(
     Ok(PositionDto::from(position))
 }
 
-/// Atualiza o nome do cargo (com auditoria de autoria transacional)
+/// Atualiza nome e descrição do cargo (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_position(
     state: State<'_, TinaApp>,
@@ -171,6 +171,11 @@ pub async fn update_position(
 ) -> Result<(), String> {
     state
         .owner_update_position_name(&position_id, &request.name)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    state
+        .owner_update_position_description(&position_id, request.description.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 

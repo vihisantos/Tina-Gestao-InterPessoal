@@ -718,6 +718,70 @@ impl TinaApp {
             .await
     }
 
+    /// Atualiza descrição do cargo com auditoria de autoria transacional
+    pub async fn owner_update_position_description(
+        &self,
+        position_id: &str,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::PositionRepository::new(self.database.pool())
+            .update_description_as_owner(position_id, installation_id, owner_id, description)
+            .await
+    }
+
+    /// Atualiza descrição do departamento com auditoria de autoria transacional
+    pub async fn owner_update_department_description(
+        &self,
+        department_id: &str,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::DepartmentRepository::new(self.database.pool())
+            .update_description_as_owner(department_id, installation_id, owner_id, description)
+            .await
+    }
+
+    /// Atualiza supervisor do funcionário com autorização transacional
+    pub async fn owner_update_employee_supervisor(
+        &self,
+        employee_id: &str,
+        supervisor_id: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ? AND c.status = 'active'
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        
+        let company_id = company_id.ok_or_else(|| {
+            TinaError::Other("Funcionário não encontrado".to_string())
+        })?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .update_supervisor_as_owner(employee_id, installation_id, owner_id, &company_id, supervisor_id)
+            .await
+    }
+
     /// Cria funcionário com auditoria de autoria transacional
     pub async fn owner_create_employee(
         &self,

@@ -420,4 +420,41 @@ impl<'a> DepartmentRepository<'a> {
         }
         commit_owner_write(tx, installation_id).await
     }
+
+    /// Atualiza a descrição do departamento com autoria transacional
+    pub(crate) async fn update_description_as_owner(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET description = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(new_description)
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized(
+                "departamento fora da instalação".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
+    }
 }

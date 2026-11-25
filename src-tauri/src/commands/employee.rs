@@ -248,21 +248,10 @@ pub async fn assign_employee_supervisor(
     employee_id: String,
     request: AssignSupervisorRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::ManageHierarchy)
-        .map_err(|e| e.to_string())?;
-    let installation_id = get_installation_id(&state);
-
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    HierarchyService::new(db.pool())
-        .set_supervisor(
+    state
+        .owner_update_employee_supervisor(
             &employee_id,
-            &company_id,
             request.supervisor_id.as_deref(),
-            request.reason.as_deref(),
-            // Sem identidade autenticada por operação neste contexto local.
-            None,
         )
         .await
         .map_err(|e| e.to_string())?;

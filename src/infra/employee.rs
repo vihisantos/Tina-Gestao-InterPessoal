@@ -685,4 +685,26 @@ impl<'a> EmployeeRepository<'a> {
 
         commit_owner_write(tx, installation_id).await
     }
+
+    /// Atualiza supervisor com autoria transacional
+    pub(crate) async fn update_supervisor_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+        supervisor_id: Option<&str>,
+    ) -> Result<()> {
+        if !self.belongs_to_company(employee_id, company_id).await? {
+            return Err(TinaError::Unauthorized(
+                "funcionário fora da empresa".into(),
+            ));
+        }
+
+        crate::infra::HierarchyService::new(self.pool)
+            .set_supervisor(employee_id, company_id, supervisor_id, None, None)
+            .await?;
+
+        Ok(())
+    }
 }

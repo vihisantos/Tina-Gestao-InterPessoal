@@ -142,7 +142,7 @@ pub async fn create_department(
     Ok(DepartmentDto::from(dept))
 }
 
-/// Atualiza o nome do departamento (com auditoria de autoria transacional)
+/// Atualiza nome e descrição do departamento (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_department(
     state: State<'_, TinaApp>,
@@ -151,6 +151,11 @@ pub async fn update_department(
 ) -> Result<(), String> {
     state
         .owner_update_department_name(&department_id, &request.name)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    state
+        .owner_update_department_description(&department_id, request.description.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 

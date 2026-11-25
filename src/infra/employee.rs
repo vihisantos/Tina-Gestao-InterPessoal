@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::core::employee::{Employee, EmployeeStatus};
 use crate::core::hierarchy::HierarchyOperation;
 use crate::error::{Result, TinaError};
+use crate::infra::audit::{begin_owner_write, commit_owner_write};
 
 /// Valor provisório de `model_config` para funcionários criados nesta fase.
 ///
@@ -502,5 +503,56 @@ impl<'a> EmployeeRepository<'a> {
         }
 
         Ok(())
+    }
+
+    /// Criação com autoria verificada pelo serviço de aplicação.
+    pub(crate) async fn create_as_owner(
+        &self,
+        installation_id: &str,
+        owner_id: &str,
+        position_id: &str,
+        name: &str,
+        responsibilities: Option<&str>,
+        supervisor_id: Option<&str>,
+    ) -> Result<Employee> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO employees (id, position_id, name, responsibilities, supervisor_id, model_config, status, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', 1, datetime('now'), datetime('now'))
+            "#,
+        )
+        .bind(&id)
+        .bind(position_id)
+        .bind(name)
+        .bind(responsibilities)
+        .bind(supervisor_id)
+        .bind(PROVISIONAL_MODEL_CONFIG)
+        .execute(&mut *tx)
+        .await?;
+
+        if let Some(supervisor_id) = supervisor_id {
+            super::hierarchy::HierarchyRepository::insert_history(
+                &mut tx,
+                &id,
+                None,
+                Some(supervisor_id),
+                HierarchyOperation::Assigned,
+                None,
+                None,
+            )
+            .await?;
+        }
+
+        let row: EmployeeRow = sqlx::query_as(
+            "SELECT id, position_id, name, responsibilities, supervisor_id, status, created_at, updated_at, deactivated_at FROM employees WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
+        commit_owner_write(tx, installation_id).await?;
+        Ok(row.into())
     }
 }

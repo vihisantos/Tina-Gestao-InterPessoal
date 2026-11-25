@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown, sanitizeMermaidSvg } from '../src/lib/chat/markdown';
+import { renderMarkdown, sanitizeMermaidSvg, isSafeMermaidSource } from '../src/lib/chat/markdown';
 
 describe('renderMarkdown', () => {
   it('renderiza títulos, listas, tabelas, citações, negrito e itálico', () => {
@@ -106,5 +106,23 @@ describe('sanitizeMermaidSvg', () => {
     expect(clean).not.toContain('imagem.example');
     expect(clean).not.toMatch(/<a\b/i);
     expect(clean).toContain('href="#ok"');
+  });
+});
+
+describe('isSafeMermaidSource', () => {
+  it('accepts common static diagrams', () => {
+    expect(isSafeMermaidSource('flowchart TD\nA[Início] --> B[Fim]')).toBe(true);
+    expect(isSafeMermaidSource('sequenceDiagram\nA->>B: Olá')).toBe(true);
+  });
+  it.each([
+    '%%{init: {"securityLevel":"loose"}}%%\ngraph TD\nA-->B',
+    '---\nconfig:\n  securityLevel: loose\n---\ngraph TD',
+    'graph TD\nclick A "https://example.com"',
+    'graph TD\nclassDef a fill:url(https://example.com)',
+    'graph TD\nA@{ img: "https://example.com/a.png" }',
+    'graph TD\nA["<img src=x>"]',
+    'graph TD\n' + 'A'.repeat(20000)
+  ])('rejects configuration, active content or oversized input', (source) => {
+    expect(isSafeMermaidSource(source)).toBe(false);
   });
 });

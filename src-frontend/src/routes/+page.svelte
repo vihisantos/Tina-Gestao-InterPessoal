@@ -5,7 +5,7 @@
   import Badge from '$lib/components/Badge.svelte';
   import Button from '$lib/components/Button.svelte';
   import Card from '$lib/components/Card.svelte';
-  import ChatMessage from '$lib/components/ChatMessage.svelte';
+  import ChatHistory from '$lib/components/ChatHistory.svelte';
   import Logo from '$lib/components/Logo.svelte';
 
   type BootstrapInfo = {
@@ -355,13 +355,9 @@
             <button type="submit" disabled={chatLoading || chatBusy || !apiKey.trim()}>Salvar no cofre Windows</button>
           </form>
         {/if}
-        <div class="chat-history" role="log" aria-live="polite" aria-busy={chatLoading}>
-          {#if !messages.length}<p>Olá! O que vamos fazer hoje?</p>{/if}
-          {#each messages as message (message.id)}
-            <ChatMessage role={message.role} content={message.content} />
-          {/each}
-          {#if partial}<ChatMessage role="assistant" content={partial} streaming />{/if}
-        </div>
+        {#key selected}
+          <ChatHistory {messages} {partial} loading={chatLoading} />
+        {/key}
         {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
         <form onsubmit={sendChat}>
           <label for="chat-draft">Mensagem</label>
@@ -418,7 +414,6 @@
 <style>
   .chat-shell { display: grid; grid-template-columns: minmax(130px, 220px) 1fr; gap: 1rem; }
   .chat-shell aside, .chat-main { display: flex; flex-direction: column; gap: .75rem; min-width: 0; padding: 1rem; border: 1px solid var(--tina-border); border-radius: 12px; background: var(--tina-surface-tint); }
-  .chat-history { display: flex; flex-direction: column; gap: .75rem; min-height: 220px; max-height: 55vh; overflow: auto; }
   .chat-main form { display: flex; flex-direction: column; gap: .5rem; }
   .chat-shell button, .chat-shell input, .chat-shell textarea { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
   @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } }

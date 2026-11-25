@@ -33,13 +33,14 @@ describe('MermaidDiagram', () => {
   it('usa Mermaid em modo strict e sanitiza o SVG gerado', async () => {
     const view = render(MermaidDiagram, { props: { code: 'graph TD; A --> B;' } });
 
-    await waitFor(() => expect(view.container.querySelector('svg')).not.toBeNull());
-
-    expect(initializeMock).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict' }));
-    expect(view.container.querySelector('script')).toBeNull();
-    expect(view.container.querySelector('[onclick]')).toBeNull();
-    expect(view.container.querySelector('a')).toBeNull();
-    expect(view.container.querySelector('use')?.getAttribute('href')).toBe('#seta');
+    await waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
+    const src = view.container.querySelector('img')?.getAttribute('src') ?? '';
+    expect(src).toMatch(/^data:image\/svg\+xml/);
+    const svg = decodeURIComponent(src.slice(src.indexOf(',') + 1));
+    expect(initializeMock).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict', htmlLabels: false }));
+    expect(view.container.querySelector('svg')).toBeNull();
+    expect(svg).not.toMatch(/<script|onclick|<a\b/i);
+    expect(svg).toContain('href="#seta"');
   });
 
   it('mostra o código original como fallback para diagramas inválidos', async () => {
@@ -80,6 +81,15 @@ describe('MarkdownContent', () => {
     await view.rerender({ streaming: false });
 
     await waitFor(() => expect(view.container.querySelector('[data-mermaid-index]')).not.toBeNull());
-    await waitFor(() => expect(view.container.querySelector('svg')).not.toBeNull());
+    await waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
+  });
+});
+
+describe('Mermaid source gate', () => {
+  it('never invokes renderer for model-supplied initialization directives', async () => {
+    renderMock.mockClear();
+    const view = render(MermaidDiagram, { props: { code: 'graph TD\n%%{init: {"securityLevel":"loose"}}%%\nA --> B' } });
+    await waitFor(() => expect(view.getByText(/Não foi possível gerar o diagrama/i)).toBeTruthy());
+    expect(renderMock).not.toHaveBeenCalled();
   });
 });

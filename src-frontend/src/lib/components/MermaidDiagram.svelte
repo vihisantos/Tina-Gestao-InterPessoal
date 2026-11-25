@@ -5,7 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import mermaid from 'mermaid';
-  import { sanitizeMermaidSvg } from '../chat/markdown';
+  import { isSafeMermaidSource, sanitizeMermaidSvg } from '../chat/markdown';
 
   let { code = '' }: { code?: string } = $props();
 
@@ -15,20 +15,41 @@
   let failed = $state(false);
   let disposed = false;
 
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'var(--tina-font)'
-    }
-  });
+  function initializeMermaid() {
+    const style = getComputedStyle(document.documentElement);
+    const color = (token: string) => style.getPropertyValue(token).trim();
+    const primary = color('--tina-surface-pink');
+    const border = color('--tina-border-strong');
+    const text = color('--tina-text');
+    const line = color('--tina-pink-strong');
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+      maxTextSize: 20_000,
+      maxEdges: 250,
+      theme: 'base',
+      themeVariables: {
+        fontFamily: 'Segoe UI, sans-serif',
+        ...(primary ? { primaryColor: primary } : {}),
+        ...(border ? { primaryBorderColor: border } : {}),
+        ...(text ? { primaryTextColor: text } : {}),
+        ...(line ? { lineColor: line } : {})
+      }
+    });
+  }
 
   async function renderDiagram() {
     try {
+      if (!isSafeMermaidSource(code)) throw new Error('Diagrama fora do formato permitido');
+      initializeMermaid();
       const result = await mermaid.render(diagramId, code);
       if (!disposed) {
-        svg = sanitizeMermaidSvg(result.svg);
+        const clean = sanitizeMermaidSvg(result.svg);
+        if (!clean.trim().startsWith('<svg')) throw new Error('SVG inválido');
+        // Render as an inert image, never insert diagram markup into the app DOM.
+        svg = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(clean);
         failed = false;
       }
     } catch {
@@ -54,7 +75,7 @@
     <pre><code>{code}</code></pre>
   </div>
 {:else if svg}
-  <div class="tina-mermaid" aria-label="Diagrama Mermaid">{@html svg}</div>
+  <div class="tina-mermaid"><img src={svg} alt="Diagrama Mermaid" /><details><summary>Ver código do diagrama</summary><pre><code>{code}</code></pre></details></div>
 {:else}
   <p class="tina-mermaid-loading">Gerando diagrama…</p>
 {/if}
@@ -96,32 +117,7 @@
     font-size: 0.85rem;
   }
 
-  :global(.tina-mermaid svg) {
-    display: block;
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    font-family: var(--tina-font);
-  }
-
-  :global(.tina-mermaid svg .node rect),
-  :global(.tina-mermaid svg .node polygon),
-  :global(.tina-mermaid svg .node path),
-  :global(.tina-mermaid svg .cluster rect) {
-    fill: var(--tina-surface-pink) !important;
-    stroke: var(--tina-border-strong) !important;
-  }
-
-  :global(.tina-mermaid svg .node text),
-  :global(.tina-mermaid svg .cluster text),
-  :global(.tina-mermaid svg .edgeLabel) {
-    fill: var(--tina-text) !important;
-    color: var(--tina-text);
-  }
-
-  :global(.tina-mermaid svg .edgePath .path),
-  :global(.tina-mermaid svg .arrowheadPath) {
-    stroke: var(--tina-pink-strong) !important;
-    fill: var(--tina-pink-strong) !important;
-  }
+  .tina-mermaid img { display: block; width: 100%; height: auto; max-width: 100%; }
+  .tina-mermaid details { margin-top: .5rem; }
+  .tina-mermaid pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

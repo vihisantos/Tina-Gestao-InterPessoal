@@ -63,7 +63,9 @@ function getPurifiers(): { html: Purifier; svg: Purifier } | null {
     svgPurifier.addHook('beforeSanitizeElements', (node) => {
       if (!(node instanceof Element)) return;
       if (node.tagName.toLowerCase() === 'style') {
-        const cleaned = (node.textContent ?? '').replace(
+        const css = node.textContent ?? '';
+        if (/@import|\\|expression\s*\(/i.test(css)) { node.remove(); return; }
+        const cleaned = css.replace(
           /url\s*\(\s*(['"]?)([^)'"]+)\1\s*\)/gi,
           (whole, _quote: string, value: string) => (value.trim().startsWith('#') ? whole : '')
         );
@@ -101,13 +103,21 @@ function sanitizeHtml(html: string): string {
   });
 }
 
+// Conservative static-diagram subset. Do not feed model-controlled configuration,
+// CSS, HTML labels, click handlers or external resources to the Mermaid engine.
+export function isSafeMermaidSource(code: string): boolean {
+  if (!code.trim() || code.length > 20_000) return false;
+  if (!/^(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline)(?:\s|$)/i.test(code.trim())) return false;
+  return !/%%\s*\{|^\s*---\s*$|@\s*\{|<\s*\/?\s*[a-z!]|\b(?:click|classDef|linkStyle|style|href|themeCSS)\s+|\b(?:url|expression)\s*\(|@import|::icon|\\/im.test(code);
+}
+
 export function sanitizeMermaidSvg(svg: string): string {
   const purifier = getPurifiers();
   if (!purifier) return '';
   return purifier.svg.sanitize(svg, {
-    USE_PROFILES: { html: true, svg: true, svgFilters: true },
-    ADD_TAGS: ['foreignObject', 'use'],
-    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'link', 'meta', 'base', 'a', 'img', 'audio', 'video', 'source'],
+    USE_PROFILES: { svg: true, svgFilters: true },
+    ADD_TAGS: ['use'],
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'link', 'meta', 'base', 'a', 'img', 'audio', 'video', 'source', 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set'],
     FORBID_ATTR: ['srcdoc'],
     ALLOW_DATA_ATTR: false
   });

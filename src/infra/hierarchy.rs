@@ -388,10 +388,7 @@ impl<'a> HierarchyService<'a> {
             ));
         }
         
-        // Passo 2: Iniciar transação e validar escopo (sem BEGIN separado)
-        // A inserção acima já validou o owner_uuid via subquery
-        
-        // Passo 3: Executar alteração do supervisor com validações originais
+        // Passo 2: Executar alteração do supervisor com validações originais
         let outcome = self
             .apply_supervisor_change_in_transaction(
                 &mut tx,
@@ -405,7 +402,7 @@ impl<'a> HierarchyService<'a> {
 
         match outcome {
             Ok(change) => {
-                // Passo 4: Remover contexto antes do COMMIT
+                // Passo 3: Remover contexto antes do COMMIT
                 sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
                     .bind(installation_id)
                     .execute(&mut *tx)
@@ -414,7 +411,7 @@ impl<'a> HierarchyService<'a> {
                 Ok(change)
             }
             Err(error) => {
-                // Passo 5: Remover contexto antes do ROLLBACK
+                // Passo 4: Remover contexto antes do ROLLBACK
                 let _ = sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
                     .bind(installation_id)
                     .execute(&mut *tx)

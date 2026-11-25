@@ -112,6 +112,30 @@ pub(crate) async fn record_denied_owner_audit_read(
     Ok(())
 }
 
+/// Registra uma tentativa negada de operação de escrita (create/update/delete).
+pub(crate) async fn record_denied_owner_audit_write(
+    pool: &SqlitePool,
+    installation_id: &str,
+    entity_type: &str,
+    entity_id: Option<&str>,
+    action: &str,
+) -> Result<()> {
+    let entity_id = entity_id.unwrap_or(installation_id);
+    sqlx::query(
+        "INSERT INTO organizational_audit_events
+         (id, installation_id, entity_type, entity_id, action, outcome)
+         VALUES (?, ?, ?, ?, ?, 'denied')",
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(installation_id)
+    .bind(entity_type)
+    .bind(entity_id)
+    .bind(action)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Inicia transação de escrita com autoria obtida do contexto autenticado.
 pub(crate) async fn begin_owner_write<'a>(
     pool: &'a SqlitePool,

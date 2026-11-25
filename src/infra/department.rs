@@ -380,45 +380,6 @@ impl<'a> DepartmentRepository<'a> {
         commit_owner_write(tx, installation_id).await
     }
 
-    /// Atualiza nome e descrição do departamento em uma única transação atômica.
-    pub(crate) async fn update_details_as_owner(
-        &self,
-        department_id: &str,
-        installation_id: &str,
-        owner_id: &str,
-        new_name: &str,
-        new_description: Option<&str>,
-    ) -> Result<()> {
-        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
-        let result = sqlx::query(
-            r#"
-            UPDATE departments
-            SET name = ?, description = ?
-            WHERE id = ?
-              AND status = 'active'
-              AND EXISTS (
-                  SELECT 1
-                  FROM companies c
-                  WHERE c.id = departments.company_id
-                    AND c.installation_id = ?
-                    AND c.status = 'active'
-              )
-            "#,
-        )
-        .bind(new_name)
-        .bind(new_description)
-        .bind(department_id)
-        .bind(installation_id)
-        .execute(&mut *tx)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(TinaError::Unauthorized(
-                "departamento fora da instalação".into(),
-            ));
-        }
-        commit_owner_write(tx, installation_id).await
-    }
-
     /// Arquiva um departamento com autoria e verificação de restrições.
     pub(crate) async fn archive_as_owner(
         &self,

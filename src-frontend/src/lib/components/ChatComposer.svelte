@@ -27,7 +27,7 @@
 
 <form class="composer" onsubmit={submit}>
   <label for="chat-draft">Mensagem</label>
-  <textarea id="chat-draft" bind:this={textarea} bind:value={draft} disabled={disabled || busy} rows="2" onkeydown={keydown} aria-describedby="composer-help" placeholder="Converse com a Tina…" />
+  <textarea id="chat-draft" bind:this={textarea} bind:value={draft} disabled={disabled || busy} rows="2" onkeydown={keydown} aria-describedby="composer-help" placeholder="Converse com a Tina…"></textarea>
   <div class="actions">
     <small id="composer-help">Enter para enviar · Shift+Enter para nova linha</small>
     {#if busy}

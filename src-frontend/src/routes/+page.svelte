@@ -45,6 +45,8 @@
   let apiKey = $state('');
   let hasKey = $state(false);
   let chatEpoch = 0;
+  let ownerEpoch = 0;
+  let sessionCheckRunning = false;
   let generating = $state(false);
   let cancelling = $state(false);
   let retryMessageId = $state('');
@@ -219,12 +221,57 @@
     }
   }
 
-  async function refreshOwner() {
+  function clearPrivateState() {
+    chatEpoch++;
+    chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = '';
+    hasKey = false; chatBusy = false; chatLoading = false; generating = false;
+    cancelling = false; retryMessageId = ''; renaming = false; renameDraft = '';
+    chatError = ''; info = null; ownerPassword = ''; ownerConfirm = '';
+  }
+
+  async function verifySession() {
+    if (ownerBusy || sessionCheckRunning || !ownerStatus?.unlocked) return;
+    sessionCheckRunning = true;
+    const epoch = ownerEpoch;
     try {
-      ownerStatus = await invoke<OwnerStatus>('owner_status');
+      const status = await invoke<OwnerStatus>('owner_status');
+      if (epoch !== ownerEpoch) return;
+      if (!status.unlocked) {
+        ownerBusy = true;
+        ownerEpoch++;
+        clearPrivateState();
+        ownerStatus = status;
+        ownerError = 'Sua sessão expirou. Entre novamente.';
+        await invoke('lock_owner').catch(() => {});
+        ownerBusy = false;
+      }
+    } catch {
+      if (epoch !== ownerEpoch) return;
+      ownerBusy = true;
+      ownerEpoch++;
+      clearPrivateState();
+      ownerStatus = { configured: true, unlocked: false, displayName: null };
+      ownerError = 'Não foi possível verificar a sessão. Entre novamente.';
+      await invoke('lock_owner').catch(() => {});
+      ownerBusy = false;
+    } finally {
+      sessionCheckRunning = false;
+    }
+  }
+
+  async function refreshOwner() {
+    const epoch = ownerEpoch;
+    try {
+      const status = await invoke<OwnerStatus>('owner_status');
+      if (epoch !== ownerEpoch) return;
+      if (!status.unlocked) clearPrivateState();
+      ownerStatus = status;
       ownerError = null;
-      if (ownerStatus.unlocked) await loadChat();
+      if (status.unlocked) await loadChat();
     } catch (cause) {
+      if (epoch !== ownerEpoch) return;
+      clearPrivateState();
+      ownerStatus = null;
       ownerError = String(cause);
     }
   }
@@ -237,6 +284,7 @@
       return;
     }
     ownerBusy = true;
+    ownerEpoch++;
     ownerError = null;
     try {
       if (!ownerStatus.configured) {
@@ -256,21 +304,30 @@
   }
 
   async function lockOwner() {
+    if (ownerBusy) return;
+    ownerBusy = true;
+    ownerEpoch++;
+    const cancel = chatBusy && generating;
+    clearPrivateState();
+    ownerStatus = { configured: true, unlocked: false, displayName: null };
     try {
-      if (chatBusy) await cancelChat();
+      if (cancel) await invoke('chat_cancel').catch(() => {});
       await invoke('lock_owner');
-      chatEpoch++;
-      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; generating = false; cancelling = false; retryMessageId = ''; renaming = false; renameDraft = ''; chatError = '';
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
       ownerError = String(cause);
+    } finally {
+      ownerBusy = false;
     }
   }
 
   async function loadBootstrap() {
     try {
-      info = await invoke<BootstrapInfo>('bootstrap');
+      const epoch = ownerEpoch;
+      const result = await invoke<BootstrapInfo>('bootstrap');
+      if (epoch !== ownerEpoch) return;
+      info = result;
       error = null;
     } catch (cause) {
       error = String(cause);
@@ -300,9 +357,16 @@
 
     void loadBootstrap();
     void refreshOwner();
+    const interval = window.setInterval(() => void verifySession(), 1000);
+    const onFocus = () => void verifySession();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
 
     return () => {
       disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
       unlisten?.();
     };
   });
@@ -483,7 +547,7 @@
   .chat-shell { display: grid; grid-template-columns: minmax(130px, 220px) 1fr; gap: 1rem; }
   .chat-shell aside, .chat-main { display: flex; flex-direction: column; gap: .75rem; min-width: 0; padding: 1rem; border: 1px solid var(--tina-border); border-radius: 12px; background: var(--tina-surface-tint); }
   .chat-main form { display: flex; flex-direction: column; gap: .5rem; }
-  .chat-shell button, .chat-shell input, .chat-shell textarea { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
+  .chat-shell button, .chat-shell input { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
   @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } }
 
   :global(*) {

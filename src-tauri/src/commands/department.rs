@@ -150,16 +150,9 @@ pub async fn update_department(
     request: UpdateDepartmentRequest,
 ) -> Result<(), String> {
     state
-        .owner_update_department_name(&department_id, &request.name)
+        .owner_update_department_details(&department_id, &request.name, request.description.as_deref())
         .await
-        .map_err(|e| e.to_string())?;
-    
-    state
-        .owner_update_department_description(&department_id, request.description.as_deref())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }
 
 /// Archiva um departamento (não pode ter cargos ativos) - com auditoria de autoria transacional

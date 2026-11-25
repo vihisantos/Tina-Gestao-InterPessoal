@@ -733,6 +733,22 @@ impl TinaApp {
             .await
     }
 
+    /// Atualiza nome e descrição do cargo em uma única transação atômica
+    pub async fn owner_update_position_details(
+        &self,
+        position_id: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::PositionRepository::new(self.database.pool())
+            .update_details_as_owner(position_id, installation_id, owner_id, name, description)
+            .await
+    }
+
     /// Atualiza descrição do departamento com auditoria de autoria transacional
     pub async fn owner_update_department_description(
         &self,
@@ -745,6 +761,22 @@ impl TinaApp {
         
         infra::DepartmentRepository::new(self.database.pool())
             .update_description_as_owner(department_id, installation_id, owner_id, description)
+            .await
+    }
+
+    /// Atualiza nome e descrição do departamento em uma única transação atômica
+    pub async fn owner_update_department_details(
+        &self,
+        department_id: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::DepartmentRepository::new(self.database.pool())
+            .update_details_as_owner(department_id, installation_id, owner_id, name, description)
             .await
     }
 

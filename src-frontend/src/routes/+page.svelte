@@ -37,6 +37,8 @@
   let partial = $state('');
   let chatBusy = $state(false);
   let chatLoading = $state(false);
+  let renameDraft = $state('');
+  let renaming = $state(false);
   let chatError = $state('');
   let apiKey = $state('');
   let hasKey = $state(false);
@@ -74,7 +76,26 @@
       messages = history;
       partial = '';
       draft = '';
+      renaming = false;
+      renameDraft = '';
       chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
+  }
+
+  async function renameChat(event: SubmitEvent) {
+    event.preventDefault();
+    if (chatBusy || chatLoading || !selected || !renameDraft.trim() || !ownerStatus?.unlocked) return;
+    const epoch = chatEpoch;
+    const id = selected;
+    chatLoading = true;
+    chatError = '';
+    try {
+      const updated = await invoke<ChatSession>('chat_rename', { sessionId: id, title: renameDraft });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      chats = chats.map((chat) => chat.id === id ? updated : chat);
+      renaming = false;
+      renameDraft = '';
     } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
     finally { if (epoch === chatEpoch) chatLoading = false; }
   }
@@ -162,7 +183,7 @@
       if (chatBusy) await cancelChat();
       await invoke('lock_owner');
       chatEpoch++;
-      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; chatError = '';
+      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; renaming = false; renameDraft = ''; chatError = '';
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
@@ -301,13 +322,25 @@
     <section class="chat-shell" aria-label="Chat da Tina">
       <aside>
         <h2>Conversas</h2>
-        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; }}>Nova conversa</button>
+        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
         {#each chats as chat (chat.id)}
           <button disabled={chatBusy || chatLoading} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
         {/each}
       </aside>
       <div class="chat-main">
         <h2>Tina</h2>
+        {#if selected}
+          {#if renaming}
+            <form onsubmit={renameChat}>
+              <label for="chat-title">Nome da conversa</label>
+              <input id="chat-title" required maxlength="120" bind:value={renameDraft} disabled={chatLoading || chatBusy} />
+              <button type="submit" disabled={chatLoading || chatBusy || !renameDraft.trim()}>Salvar nome</button>
+              <button type="button" disabled={chatLoading} onclick={() => { renaming = false; renameDraft = ''; }}>Cancelar</button>
+            </form>
+          {:else}
+            <button disabled={chatBusy || chatLoading} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
+          {/if}
+        {/if}
         {#if !hasKey}
           <form onsubmit={saveKey}>
             <label for="nvidia-key">Chave NVIDIA NIM</label>

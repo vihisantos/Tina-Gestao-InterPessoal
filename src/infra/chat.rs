@@ -30,6 +30,14 @@ pub struct ChatSession {
     pub created_at: String,
 }
 
+/// Limites de chat expostos para UI/comandos, derivados das constantes do backend.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatLimits {
+    /// Limite máximo de bytes UTF-8 para mensagem de usuário.
+    pub max_user_message_bytes: usize,
+}
+
 /// Mensagem persistida, sem tokens de autenticação.
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ChatMessage {
@@ -259,11 +267,17 @@ pub fn build_nvidia_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value>
 
 /// Aceita exclusivamente o endpoint oficial configurado para NVIDIA NIM.
 /// O transporte HTTP também deve desabilitar redirecionamentos.
-pub fn nvidia_endpoint(base_url: &str) -> Result<&'static str> {
-    if base_url != "https://integrate.api.nvidia.com/v1" {
-        return Err(TinaError::Other("endpoint NVIDIA não autorizado".into()));
+/// Em testes, permite localhost para mock de transporte.
+pub fn nvidia_endpoint(base_url: &str) -> Result<String> {
+    if base_url == "https://integrate.api.nvidia.com/v1" {
+        return Ok("https://integrate.api.nvidia.com/v1/chat/completions".to_string());
     }
-    Ok("https://integrate.api.nvidia.com/v1/chat/completions")
+    #[cfg(test)]
+    if base_url.starts_with("http://127.0.0.1:") || base_url.starts_with("http://localhost:") {
+        let base = base_url.trim_end_matches('/');
+        return Ok(format!("{base}/chat/completions"));
+    }
+    Err(TinaError::Other("endpoint NVIDIA não autorizado".into()))
 }
 
 #[cfg(test)]
@@ -488,6 +502,31 @@ pub(crate) async fn stream_nvidia(
     model: &str,
     messages: &[ChatMessage],
     max_tokens: u32,
+    cancelled: tokio::sync::watch::Receiver<bool>,
+    on_delta: impl FnMut(&str) -> Result<()>,
+) -> Result<String> {
+    stream_nvidia_from_base(
+        "https://integrate.api.nvidia.com/v1",
+        key,
+        model,
+        messages,
+        max_tokens,
+        std::time::Duration::from_secs(180),
+        cancelled,
+        on_delta,
+    )
+    .await
+}
+
+/// Variante interna/testável com base URL e timeout configuráveis.
+/// A URL é validada por `nvidia_endpoint`; produção usa apenas endpoint oficial.
+pub(crate) async fn stream_nvidia_from_base(
+    base_url: &str,
+    key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    max_tokens: u32,
+    response_timeout: std::time::Duration,
     mut cancelled: tokio::sync::watch::Receiver<bool>,
     mut on_delta: impl FnMut(&str) -> Result<()>,
 ) -> Result<String> {
@@ -497,12 +536,14 @@ pub(crate) async fn stream_nvidia(
     if *cancelled.borrow() {
         return Err(TinaError::Other("geração cancelada".into()));
     }
+    let endpoint = nvidia_endpoint(base_url)?;
+    let https_only = endpoint.starts_with("https://");
     let client = reqwest::Client::builder()
-        .https_only(true)
+        .https_only(https_only)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(180))
+        .timeout(response_timeout)
         .build()
         .map_err(|_| TinaError::Other("cliente NVIDIA indisponível".into()))?;
     let payload = serde_json::json!({
@@ -511,10 +552,7 @@ pub(crate) async fn stream_nvidia(
         "max_tokens": max_tokens,
         "stream": true
     });
-    let request = client
-        .post(nvidia_endpoint("https://integrate.api.nvidia.com/v1")?)
-        .bearer_auth(key)
-        .json(&payload);
+    let request = client.post(endpoint).bearer_auth(key).json(&payload);
     let work = async {
         let mut response = request
             .send()

@@ -509,10 +509,47 @@ async fn expired_owner_session_blocks_chat_generation_in_isolated_env() {
     let _ = std::fs::remove_file(path);
 }
 
+async fn spawn_sse_server(
+    frames: Vec<(std::time::Duration, String)>,
+) -> (String, tokio::task::JoinHandle<usize>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 4096];
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(2), socket.read(&mut buf)).await;
+        let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
+        socket.write_all(headers.as_bytes()).await.unwrap();
+        let mut sent = 0usize;
+        for (delay, frame) in frames {
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+            if socket.write_all(frame.as_bytes()).await.is_err() {
+                break;
+            }
+            let _ = socket.flush().await;
+            sent += 1;
+        }
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut sink = [0u8; 64];
+            loop {
+                match socket.read(&mut sink).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        })
+        .await;
+        sent
+    });
+    (format!("http://{}", addr), handle)
+}
+
 #[tokio::test]
 async fn cancelled_generation_signal_is_respected_before_transport() {
-    // Canal já cancelado: a camada de transporte/chat deve falhar como cancelada
-    // sem persistir resposta. Usamos stream_nvidia diretamente com canal cancelado.
     let (_tx, rx) = tokio::sync::watch::channel(true);
     let messages = vec![chat::ChatMessage {
         id: String::new(),
@@ -524,4 +561,137 @@ async fn cancelled_generation_signal_is_respected_before_transport() {
         .await
         .unwrap_err();
     assert!(err.to_string().to_lowercase().contains("cancel"));
+}
+
+#[tokio::test]
+async fn timeout_during_active_stream_cancels_without_persisting_assistant() {
+    let path = std::env::temp_dir().join(format!("tina-chat-timeout-{}.db", uuid::Uuid::new_v4()));
+    let app =
+        crate::TinaApp::initialize_at(&path, "chat-timeout-installation", "chat-timeout-owner")
+            .await
+            .unwrap();
+    app.unlock_owner_for_test().unwrap();
+    app.set_test_nvidia_key_for_test("test-key");
+    let session = app.owner_create_chat("Timeout").await.unwrap();
+    app.owner_append_chat_message(&session.id, "Pergunta longa")
+        .await
+        .unwrap();
+    let (base, server) = spawn_sse_server(vec![
+        (
+            std::time::Duration::from_millis(0),
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Ol?\"}}]}\n\n".to_string(),
+        ),
+        (
+            std::time::Duration::from_millis(400),
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n".to_string(),
+        ),
+        (
+            std::time::Duration::from_millis(0),
+            "data: [DONE]\n\n".to_string(),
+        ),
+    ])
+    .await;
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let err = app
+        .owner_generate_chat_for_test(
+            &session.id,
+            &base,
+            std::time::Duration::from_millis(80),
+            rx,
+            |_| Ok(()),
+        )
+        .await
+        .unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("tempo")
+            || msg.contains("timeout")
+            || msg.contains("falha no stream")
+            || msg.contains("interromp")
+            || msg.contains("cancel"),
+        "erro inesperado: {msg}"
+    );
+    assert!(server.await.unwrap() >= 1);
+    let history = chat::list_messages(
+        app.database().pool(),
+        "chat-timeout-installation",
+        &session.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].role, "user");
+    drop(app);
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn expired_session_during_active_stream_interrupts_and_does_not_persist() {
+    let path = std::env::temp_dir().join(format!(
+        "tina-chat-expire-stream-{}.db",
+        uuid::Uuid::new_v4()
+    ));
+    let app = crate::TinaApp::initialize_at(
+        &path,
+        "chat-expire-stream-installation",
+        "chat-expire-stream-owner",
+    )
+    .await
+    .unwrap();
+    app.unlock_owner_for_test().unwrap();
+    app.set_test_nvidia_key_for_test("test-key");
+    let session = app.owner_create_chat("Expira??o ativa").await.unwrap();
+    app.owner_append_chat_message(&session.id, "Responda")
+        .await
+        .unwrap();
+    let (base, server) = spawn_sse_server(vec![
+        (
+            std::time::Duration::from_millis(0),
+            "data: {\"choices\":[{\"delta\":{\"content\":\"parcial\"}}]}\n\n".to_string(),
+        ),
+        (
+            std::time::Duration::from_millis(500),
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n".to_string(),
+        ),
+        (
+            std::time::Duration::from_millis(0),
+            "data: [DONE]\n\n".to_string(),
+        ),
+    ])
+    .await;
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let app_ref = &app;
+    let err = app
+        .owner_generate_chat_for_test(
+            &session.id,
+            &base,
+            std::time::Duration::from_secs(5),
+            rx,
+            move |_| {
+                app_ref.expire_owner_session_for_test()?;
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("sess")
+            || msg.contains("expir")
+            || msg.contains("bloque")
+            || msg.contains("alterada"),
+        "erro inesperado: {msg}"
+    );
+    let _ = server.await.unwrap();
+    let history = chat::list_messages(
+        app.database().pool(),
+        "chat-expire-stream-installation",
+        &session.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].role, "user");
+    drop(app);
+    let _ = std::fs::remove_file(path);
 }

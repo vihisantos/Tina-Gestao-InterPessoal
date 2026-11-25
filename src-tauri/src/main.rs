@@ -112,6 +112,13 @@ fn chat_delete_key(app: State<'_, TinaApp>) -> Result<(), String> {
     app.owner_delete_nvidia_key().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn chat_limits(app: State<'_, TinaApp>) -> Result<tina::infra::chat::ChatLimits, String> {
+    app.require_owner(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    Ok(app.chat_limits())
+}
+
 struct ActiveRun {
     id: String,
     cancel: tokio::sync::watch::Sender<bool>,
@@ -261,6 +268,7 @@ fn main() {
             chat_prepare,
             chat_generate,
             chat_cancel,
+            chat_limits,
             chat_set_key,
             chat_has_key,
             chat_delete_key,

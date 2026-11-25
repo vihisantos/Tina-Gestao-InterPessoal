@@ -32,6 +32,7 @@
 
   type ChatSession = { id: string; title: string; created_at: string };
   type ChatMessage = { id: string; role: string; content: string; created_at: string };
+  type ChatLimits = { maxUserMessageBytes: number };
   let chats = $state<ChatSession[]>([]);
   let selected = $state('');
   let messages = $state<ChatMessage[]>([]);
@@ -53,20 +54,32 @@
   let runId = '';
   let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
   let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
+  let chatLimits = $state<ChatLimits>({ maxUserMessageBytes: 4032 });
+  let view = $state<'chat' | 'pessoal'>('chat');
+  let initialGreeting = $derived.by(() => {
+    const name = ownerStatus?.displayName?.trim();
+    return name
+      ? `Olá, ${name}. Eu sou a Tina. Como posso ajudar você hoje?`
+      : 'Olá! Eu sou a Tina. Como posso ajudar você hoje?';
+  });
 
   async function loadChat() {
     if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
     const epoch = ++chatEpoch;
     chatLoading = true;
     try {
-      const list = await invoke<ChatSession[]>('chat_list');
-      const keyAvailable = await invoke<boolean>('chat_has_key');
+      const [list, keyAvailable, limits] = await Promise.all([
+        invoke<ChatSession[]>('chat_list'),
+        invoke<boolean>('chat_has_key'),
+        invoke<ChatLimits>('chat_limits')
+      ]);
       if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
       const id = list.find((chat) => chat.id === selected)?.id ?? list[0]?.id ?? '';
       const history = id ? await invoke<ChatMessage[]>('chat_history', { sessionId: id }) : [];
       if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
       chats = list;
       hasKey = keyAvailable;
+      chatLimits = limits;
       selected = id;
       messages = history;
       partial = '';
@@ -174,8 +187,9 @@
     partial = '';
     const epoch = chatEpoch;
     const content = draft;
-    if (new TextEncoder().encode(content).length > 8128) {
-      chatError = 'Mensagem extensa demais. Divida o texto em partes de até 8.128 bytes.';
+    const maxBytes = chatLimits.maxUserMessageBytes;
+    if (new TextEncoder().encode(content).length > maxBytes) {
+      chatError = `Mensagem extensa demais. Divida o texto em partes de até ${maxBytes.toLocaleString('pt-BR')} bytes.`;
       chatBusy = false;
       return;
     }
@@ -254,6 +268,7 @@
     hasKey = false; chatBusy = false; chatLoading = false; generating = false;
     cancelling = false; retryMessageId = ''; runId = ''; renaming = false; renameDraft = '';
     chatError = ''; info = null; ownerPassword = ''; ownerConfirm = ''; pendingSend = null;
+    view = 'chat';
   }
 
   async function verifySession() {
@@ -485,44 +500,60 @@
   </section>
 
   {#if ownerStatus?.unlocked}
-    <section class="chat-shell" aria-label="Chat da Tina">
-      <aside>
-        <h2>Conversas</h2>
-        <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
-        {#each chats as chat (chat.id)}
-          <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
-        {/each}
-      </aside>
-      <div class="chat-main">
-        <h2>Tina</h2>
-        {#if selected}
-          {#if renaming}
-            <form onsubmit={renameChat}>
-              <label for="chat-title">Nome da conversa</label>
-              <input id="chat-title" required maxlength="120" bind:value={renameDraft} disabled={chatLoading || chatBusy} />
-              <button type="submit" disabled={chatLoading || chatBusy || !renameDraft.trim()}>Salvar nome</button>
-              <button type="button" disabled={chatLoading} onclick={() => { renaming = false; renameDraft = ''; }}>Cancelar</button>
-            </form>
-          {:else}
-            <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
+    <section class="workspace" aria-label="Área principal">
+      <nav class="app-nav" aria-label="Navegação principal">
+        <button type="button" class:active={view === 'chat'} aria-current={view === 'chat' ? 'page' : undefined} onclick={() => (view = 'chat')}>Chat</button>
+        <button type="button" class:active={view === 'pessoal'} aria-current={view === 'pessoal' ? 'page' : undefined} onclick={() => (view = 'pessoal')}>Pessoal</button>
+      </nav>
+
+      {#if view === 'chat'}
+      <section class="chat-shell" aria-label="Chat da Tina">
+        <aside>
+          <h2>Conversas</h2>
+          <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
+          {#each chats as chat (chat.id)}
+            <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
+          {/each}
+        </aside>
+        <div class="chat-main">
+          <h2>Tina</h2>
+          {#if selected}
+            {#if renaming}
+              <form onsubmit={renameChat}>
+                <label for="chat-title">Nome da conversa</label>
+                <input id="chat-title" required maxlength="120" bind:value={renameDraft} disabled={chatLoading || chatBusy} />
+                <button type="submit" disabled={chatLoading || chatBusy || !renameDraft.trim()}>Salvar nome</button>
+                <button type="button" disabled={chatLoading} onclick={() => { renaming = false; renameDraft = ''; }}>Cancelar</button>
+              </form>
+            {:else}
+              <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
+            {/if}
           {/if}
-        {/if}
-        {#if !hasKey}
-          <form onsubmit={saveKey}>
-            <label for="nvidia-key">Chave NVIDIA NIM</label>
-            <input id="nvidia-key" type="password" autocomplete="off" required disabled={chatLoading || chatBusy} bind:value={apiKey} />
-            <button type="submit" disabled={chatLoading || chatBusy || !apiKey.trim()}>Salvar no cofre Windows</button>
-          </form>
-        {/if}
-        {#key selected}
-          <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} />
-        {/key}
-        {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
-        {#if retryAvailable && !chatBusy}
-          <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
-        {/if}
-        <ChatComposer bind:draft disabled={chatLoading || !hasKey} readOnly={!!pendingSend} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
-      </div>
+          {#if !hasKey}
+            <form onsubmit={saveKey}>
+              <label for="nvidia-key">Chave NVIDIA NIM</label>
+              <input id="nvidia-key" type="password" autocomplete="off" required disabled={chatLoading || chatBusy} bind:value={apiKey} />
+              <button type="submit" disabled={chatLoading || chatBusy || !apiKey.trim()}>Salvar no cofre Windows</button>
+            </form>
+          {/if}
+          {#key selected}
+            <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} greeting={initialGreeting} />
+          {/key}
+          {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
+          {#if retryAvailable && !chatBusy}
+            <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
+          {/if}
+          <ChatComposer bind:draft disabled={chatLoading || !hasKey} readOnly={!!pendingSend} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
+        </div>
+      </section>
+      {:else}
+        <section class="pessoal-shell" aria-label="Pessoal">
+          <Card title="Pessoal">
+            <p>Este espaço reunirá conversas e contexto pessoal quando os módulos correspondentes estiverem disponíveis.</p>
+            <p class="detail">Por enquanto, a Tina não inventa atividades nem cria dados fictícios. Use o Chat para conversar com a Tina e acompanhar o que já existe na instalação.</p>
+          </Card>
+        </section>
+      {/if}
     </section>
   {:else}
   <section class="grid" aria-label="Estado da instalação">
@@ -569,11 +600,17 @@
 </main>
 
 <style>
+  .workspace { display: flex; flex-direction: column; gap: 1rem; }
+  .app-nav { display: inline-flex; gap: .5rem; align-self: flex-start; padding: .3rem; border: 1px solid var(--tina-border); border-radius: var(--tina-radius-pill); background: var(--tina-surface-tint); }
+  .app-nav button { border: 0; background: transparent; color: var(--tina-text-muted); padding: .55rem .95rem; border-radius: var(--tina-radius-pill); font: inherit; font-weight: 600; cursor: pointer; }
+  .app-nav button.active { background: #fff; color: var(--tina-pink-deep); box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+  .app-nav button:focus-visible { outline: 2px solid var(--tina-pink); outline-offset: 2px; }
   .chat-shell { display: grid; grid-template-columns: minmax(130px, 220px) 1fr; gap: 1rem; }
   .chat-shell aside, .chat-main { display: flex; flex-direction: column; gap: .75rem; min-width: 0; padding: 1rem; border: 1px solid var(--tina-border); border-radius: 12px; background: var(--tina-surface-tint); }
   .chat-main form { display: flex; flex-direction: column; gap: .5rem; }
   .chat-shell button, .chat-shell input { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
-  @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } }
+  .pessoal-shell { max-width: 52rem; }
+  @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } .app-nav { width: 100%; } .app-nav button { flex: 1; } }
 
   :global(*) {
     box-sizing: border-box;

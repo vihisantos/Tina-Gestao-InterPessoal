@@ -164,7 +164,8 @@ async fn rename_chat_enforces_installation_scope_and_title_validation() {
 
 #[tokio::test]
 async fn chat_request_ids_are_idempotent_and_scoped() {
-    let path = std::env::temp_dir().join(format!("tina-chat-idempotent-{}.db", uuid::Uuid::new_v4()));
+    let path =
+        std::env::temp_dir().join(format!("tina-chat-idempotent-{}.db", uuid::Uuid::new_v4()));
     let db = Database::open(&path).await.unwrap();
     let repo = InstallationRepository::new(db.pool());
     let owner = repo.create("idempotent-owner", "owner-a").await.unwrap();
@@ -175,12 +176,22 @@ async fn chat_request_ids_are_idempotent_and_scoped() {
         chat::create_session_with_id(db.pool(), &owner.id, &session_id, "Conversa")
             .await
             .unwrap();
-        chat::append_message_with_id(db.pool(), &owner.id, &session_id, &message_id, "user", "Olá")
-            .await
-            .unwrap();
+        chat::append_message_with_id(
+            db.pool(),
+            &owner.id,
+            &session_id,
+            &message_id,
+            "user",
+            "Olá",
+        )
+        .await
+        .unwrap();
     }
     assert_eq!(
-        chat::list_sessions(db.pool(), &owner.id).await.unwrap().len(),
+        chat::list_sessions(db.pool(), &owner.id)
+            .await
+            .unwrap()
+            .len(),
         1
     );
     assert_eq!(
@@ -195,18 +206,16 @@ async fn chat_request_ids_are_idempotent_and_scoped() {
             .await
             .is_err()
     );
-    assert!(
-        chat::append_message_with_id(
-            db.pool(),
-            &owner.id,
-            &session_id,
-            &message_id,
-            "user",
-            "Outro texto"
-        )
-        .await
-        .is_err()
-    );
+    assert!(chat::append_message_with_id(
+        db.pool(),
+        &owner.id,
+        &session_id,
+        &message_id,
+        "user",
+        "Outro texto"
+    )
+    .await
+    .is_err());
     assert!(
         chat::append_message(db.pool(), &owner.id, &session_id, "user", &"á".repeat(4065))
             .await

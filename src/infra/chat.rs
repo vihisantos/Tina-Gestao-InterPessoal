@@ -146,7 +146,9 @@ pub(crate) async fn append_message_with_id(
         || content.len() > limit
         || Uuid::parse_str(id).is_err()
     {
-        return Err(TinaError::Other("mensagem inválida ou extensa demais".into()));
+        return Err(TinaError::Other(
+            "mensagem inválida ou extensa demais".into(),
+        ));
     }
     let mut tx = pool.begin().await?;
     let result = sqlx::query(

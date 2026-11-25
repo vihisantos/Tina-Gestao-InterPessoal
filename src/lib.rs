@@ -417,7 +417,9 @@ impl TinaApp {
                 .ok_or_else(|| TinaError::Unauthorized("sessão bloqueada".into()))?;
             let check_session = || {
                 if self.owner_access.session_marker()? != Some(session_marker) {
-                    return Err(TinaError::Unauthorized("sessão alterada ou expirada".into()));
+                    return Err(TinaError::Unauthorized(
+                        "sessão alterada ou expirada".into(),
+                    ));
                 }
                 Ok(())
             };
@@ -429,8 +431,7 @@ impl TinaApp {
                 ));
             }
             let messages = self.owner_chat_messages(session_id).await?;
-            let context =
-                infra::chat::context_window(&messages, infra::chat::CHAT_CONTEXT_BYTES);
+            let context = infra::chat::context_window(&messages, infra::chat::CHAT_CONTEXT_BYTES);
             if context.last().map(|m| m.role.as_str()) != Some("user") {
                 return Err(TinaError::Other(
                     "nenhuma mensagem de usuário disponível no contexto".into(),

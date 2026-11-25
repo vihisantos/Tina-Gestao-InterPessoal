@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::core::position::{Position, PositionStatus};
 use crate::error::{Result, TinaError};
+use crate::infra::audit::{begin_owner_write, commit_owner_write};
 
 /// Representa uma linha de posição do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -354,5 +355,165 @@ impl<'a> PositionRepository<'a> {
             .into());
         }
         Ok(())
+    }
+
+    /// Criação com autoria verificada pelo serviço de aplicação.
+    pub(crate) async fn create_as_owner(
+        &self,
+        installation_id: &str,
+        owner_id: &str,
+        department_id: &str,
+        name: &str,
+        level: i32,
+        authority_level: i32,
+        description: Option<&str>,
+    ) -> Result<Position> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO positions (id, department_id, name, level, authority_level, description, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+            "#,
+        )
+        .bind(&id)
+        .bind(department_id)
+        .bind(name)
+        .bind(level)
+        .bind(authority_level)
+        .bind(description)
+        .execute(&mut *tx)
+        .await?;
+
+        let row: PositionRow = sqlx::query_as(
+            "SELECT id, department_id, name, level, authority_level, description, status, created_at FROM positions WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
+        commit_owner_write(tx, installation_id).await?;
+        Ok(row.into())
+    }
+
+    /// Atualiza o nome do cargo com autoria no mesmo commit.
+    pub(crate) async fn update_name_as_owner(
+        &self,
+        position_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET name = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(new_name)
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized(
+                "cargo fora da instalação".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Atualiza a descrição do cargo com autoria no mesmo commit.
+    pub(crate) async fn update_description_as_owner(
+        &self,
+        position_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        new_description: Option<&str>,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET description = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(new_description)
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized(
+                "cargo fora da instalação".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Arquiva um cargo com autoria e verificação de restrições.
+    pub(crate) async fn archive_as_owner(
+        &self,
+        position_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE positions
+            SET status = 'inactive'
+            WHERE id = ?
+              AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM employees e
+                  WHERE e.position_id = positions.id
+                  AND e.status = 'active'
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  JOIN companies c ON c.id = d.company_id
+                  WHERE d.id = positions.department_id
+                    AND d.status = 'active'
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(position_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "cargo indisponível ou com funcionários ativos".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
     }
 }

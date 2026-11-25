@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::core::department::{Department, DepartmentStatus};
 use crate::error::{Result, TinaError};
+use crate::infra::audit::{begin_owner_write, commit_owner_write};
 
 /// Representa uma linha de departamento do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -303,5 +304,120 @@ impl<'a> DepartmentRepository<'a> {
             .into());
         }
         Ok(())
+    }
+
+    /// Cria departamento com autoria verificada pelo serviço de aplicação.
+    pub(crate) async fn create_as_owner(
+        &self,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+        code: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<Department> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO departments (id, company_id, code, name, description, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
+            "#,
+        )
+        .bind(&id)
+        .bind(company_id)
+        .bind(code)
+        .bind(name)
+        .bind(description)
+        .execute(&mut *tx)
+        .await?;
+
+        let row: DepartmentRow = sqlx::query_as(
+            "SELECT id, company_id, code, name, description, status, created_at FROM departments WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
+        commit_owner_write(tx, installation_id).await?;
+        Ok(row.into())
+    }
+
+    /// Atualiza o nome do departamento com autoria no mesmo commit.
+    pub(crate) async fn update_name_as_owner(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET name = ?
+            WHERE id = ?
+              AND status = 'active'
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(new_name)
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized(
+                "departamento fora da instalação".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Arquiva um departamento com autoria e verificação de restrições.
+    pub(crate) async fn archive_as_owner(
+        &self,
+        department_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE departments
+            SET status = 'inactive'
+            WHERE id = ?
+              AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM positions p
+                  WHERE p.department_id = departments.id
+                    AND p.status = 'active'
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM companies c
+                  WHERE c.id = departments.company_id
+                    AND c.installation_id = ?
+                    AND c.status = 'active'
+              )
+            "#,
+        )
+        .bind(department_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "departamento indisponível ou com cargos ativos".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
     }
 }

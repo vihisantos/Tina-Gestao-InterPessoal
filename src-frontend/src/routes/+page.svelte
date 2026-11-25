@@ -6,6 +6,7 @@
   import Button from '$lib/components/Button.svelte';
   import Card from '$lib/components/Card.svelte';
   import ChatHistory from '$lib/components/ChatHistory.svelte';
+  import ChatComposer from '$lib/components/ChatComposer.svelte';
   import Logo from '$lib/components/Logo.svelte';
 
   type BootstrapInfo = {
@@ -44,6 +45,10 @@
   let apiKey = $state('');
   let hasKey = $state(false);
   let chatEpoch = 0;
+  let generating = $state(false);
+  let cancelling = $state(false);
+  let retryMessageId = $state('');
+  let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
 
   async function loadChat() {
     if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
@@ -61,6 +66,7 @@
       selected = id;
       messages = history;
       partial = '';
+      retryMessageId = '';
       chatError = '';
     } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
     finally { if (epoch === chatEpoch) chatLoading = false; }
@@ -77,6 +83,7 @@
       messages = history;
       partial = '';
       draft = '';
+      retryMessageId = '';
       renaming = false;
       renameDraft = '';
       chatError = '';
@@ -117,36 +124,99 @@
     finally { if (epoch === chatEpoch) chatLoading = false; }
   }
 
-  async function sendChat(event: SubmitEvent) {
-    event.preventDefault();
+  async function generateAnswer(sessionId: string, userId: string, epoch: number) {
+    generating = true;
+    retryMessageId = '';
+    const onDelta = new Channel<string>();
+    onDelta.onmessage = (delta) => {
+      if (epoch === chatEpoch && generating && !cancelling) partial += delta;
+    };
+    try {
+      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, onDelta });
+      if (epoch === chatEpoch) {
+        messages = [...messages.filter((m) => m.id !== answer.id), answer];
+        chatError = '';
+      }
+    } catch (cause) {
+      if (epoch !== chatEpoch) return;
+      chatError = cancelling ? 'Resposta interrompida.' : String(cause);
+      // Reconcile persisted history before offering retry. IPC failure could
+      // have occurred after a successful write; never append the user again.
+      try {
+        const history = await invoke<ChatMessage[]>('chat_history', { sessionId });
+        if (epoch !== chatEpoch) return;
+        messages = history;
+        const last = history.at(-1);
+        if (last?.id === userId && last.role === 'user') retryMessageId = userId;
+        else if (last?.role === 'assistant') chatError = '';
+      } catch {
+        if (epoch === chatEpoch) chatError += ' Não foi possível confirmar o histórico. Reabra a conversa antes de tentar novamente.';
+      }
+    } finally {
+      if (epoch === chatEpoch) { generating = false; cancelling = false; partial = ''; }
+    }
+  }
+
+  async function sendChat() {
     if (chatBusy || chatLoading || !ownerStatus?.unlocked || !draft.trim() || !hasKey) return;
     chatBusy = true;
     chatError = '';
+    retryMessageId = '';
     partial = '';
     const epoch = chatEpoch;
+    const content = draft;
     try {
       if (!selected) {
-        const session = await invoke<ChatSession>('chat_create', { title: draft.trim().slice(0, 80) });
+        const session = await invoke<ChatSession>('chat_create', { title: content.trim().slice(0, 80) });
         if (epoch !== chatEpoch) return;
         selected = session.id;
         chats = [session, ...chats];
       }
       const sessionId = selected;
-      const message = await invoke<ChatMessage>('chat_append', { sessionId, content: draft });
+      const message = await invoke<ChatMessage>('chat_append', { sessionId, content });
       if (epoch !== chatEpoch) return;
       messages = [...messages, message];
       draft = '';
-      const onDelta = new Channel<string>();
-      onDelta.onmessage = (delta) => { if (epoch === chatEpoch) partial += delta; };
-      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, onDelta });
-      if (epoch === chatEpoch) messages = [...messages, answer];
-    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
-    finally { if (epoch === chatEpoch) { partial = ''; chatBusy = false; } }
+      await generateAnswer(sessionId, message.id, epoch);
+    } catch (cause) {
+      if (epoch === chatEpoch) chatError = String(cause) + ' Confira o histórico antes de reenviar.';
+    } finally {
+      if (epoch === chatEpoch) { partial = ''; chatBusy = false; }
+    }
+  }
+
+  async function retryChat() {
+    if (!retryAvailable || chatBusy || chatLoading || !selected || !hasKey || !ownerStatus?.unlocked) return;
+    const epoch = chatEpoch;
+    const sessionId = selected;
+    const userId = retryMessageId;
+    chatBusy = true;
+    chatError = '';
+    retryMessageId = '';
+    try {
+      const history = await invoke<ChatMessage[]>('chat_history', { sessionId });
+      if (epoch !== chatEpoch) return;
+      messages = history;
+      if (history.at(-1)?.id !== userId || history.at(-1)?.role !== 'user') {
+        chatError = 'O histórico mudou. Nenhuma mensagem foi reenviada.';
+        return;
+      }
+      await generateAnswer(sessionId, userId, epoch);
+    } catch (cause) {
+      if (epoch === chatEpoch) chatError = String(cause);
+    } finally {
+      if (epoch === chatEpoch) { partial = ''; chatBusy = false; }
+    }
   }
 
   async function cancelChat() {
+    if (!generating || cancelling) return;
+    const epoch = chatEpoch;
+    cancelling = true;
     try { await invoke('chat_cancel'); }
-    catch (cause) { chatError = String(cause); }
+    catch (cause) {
+      if (epoch === chatEpoch) { chatError = String(cause); cancelling = false; }
+    }
   }
 
   async function refreshOwner() {
@@ -190,7 +260,7 @@
       if (chatBusy) await cancelChat();
       await invoke('lock_owner');
       chatEpoch++;
-      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; renaming = false; renameDraft = ''; chatError = '';
+      chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = ''; hasKey = false; chatBusy = false; chatLoading = false; generating = false; cancelling = false; retryMessageId = ''; renaming = false; renameDraft = ''; chatError = '';
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
@@ -329,7 +399,7 @@
     <section class="chat-shell" aria-label="Chat da Tina">
       <aside>
         <h2>Conversas</h2>
-        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
+        <button disabled={chatBusy || chatLoading} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
         {#each chats as chat (chat.id)}
           <button disabled={chatBusy || chatLoading} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
         {/each}
@@ -356,15 +426,13 @@
           </form>
         {/if}
         {#key selected}
-          <ChatHistory {messages} {partial} loading={chatLoading} />
+          <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} />
         {/key}
         {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
-        <form onsubmit={sendChat}>
-          <label for="chat-draft">Mensagem</label>
-          <textarea id="chat-draft" bind:value={draft} disabled={chatBusy || chatLoading || !hasKey} rows="3"></textarea>
-          <button type="submit" disabled={chatBusy || chatLoading || !hasKey || !draft.trim()}>Enviar</button>
-          {#if chatBusy}<button type="button" onclick={cancelChat}>Interromper</button>{/if}
-        </form>
+        {#if retryAvailable && !chatBusy}
+          <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
+        {/if}
+        <ChatComposer bind:draft disabled={chatLoading || !hasKey} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
       </div>
     </section>
   {:else}

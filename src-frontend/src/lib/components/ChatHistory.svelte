@@ -4,8 +4,8 @@
   import { isNearBottom } from '../chat/scroll';
 
   type Message = { id: string; role: string; content: string };
-  let { messages, partial = '', loading = false }: {
-    messages: Message[]; partial?: string; loading?: boolean;
+  let { messages, partial = '', loading = false, generating = false, cancelling = false }: {
+    messages: Message[]; partial?: string; loading?: boolean; generating?: boolean; cancelling?: boolean;
   } = $props();
 
   let viewport: HTMLDivElement;
@@ -43,6 +43,7 @@
         <ChatMessage role={message.role} content={message.content} />
       {/each}
       {#if partial}<ChatMessage role="assistant" content={partial} streaming />{/if}
+      {#if generating}<p class="generation" role="status">{cancelling ? 'Interrompendo resposta…' : partial ? 'Tina está respondendo…' : 'Tina está preparando a resposta…'}</p>{/if}
     </div>
   </div>
   {#if !following}
@@ -51,6 +52,7 @@
 </div>
 
 <style>
+  .generation { color: var(--tina-text-muted); font-size: .85rem; margin: .25rem 0; }
   .history-shell { position: relative; min-width: 0; }
   .chat-history { min-height: 220px; max-height: 55vh; overflow: auto; overflow-anchor: none; }
   .history-content { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }

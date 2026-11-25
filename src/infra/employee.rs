@@ -555,4 +555,134 @@ impl<'a> EmployeeRepository<'a> {
         commit_owner_write(tx, installation_id).await?;
         Ok(row.into())
     }
+
+    /// Atualiza apenas as responsabilidades com autoria transacional
+    pub(crate) async fn update_responsibilities_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+        responsibilities: Option<&str>,
+    ) -> Result<()> {
+        if !self.belongs_to_company(employee_id, company_id).await? {
+            return Err(TinaError::Unauthorized(
+                "funcionário fora da empresa".into(),
+            ));
+        }
+
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+
+        let result = sqlx::query(
+            "UPDATE employees SET responsibilities = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(responsibilities)
+        .bind(employee_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other("Employee not found".to_string()).into());
+        }
+
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Desativa funcionário com autoria transacional
+    pub(crate) async fn deactivate_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+    ) -> Result<()> {
+        if !self.belongs_to_company(employee_id, company_id).await? {
+            return Err(TinaError::Unauthorized(
+                "funcionário fora da empresa".into(),
+            ));
+        }
+
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+
+        let result = sqlx::query(
+            "UPDATE employees SET status = 'inactive', is_active = 0, deactivated_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'active'",
+        )
+        .bind(employee_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "funcionário não encontrado ou já inativo".into(),
+            ));
+        }
+
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Reativa funcionário com autoria transacional
+    pub(crate) async fn reactivate_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+    ) -> Result<()> {
+        if !self.belongs_to_company(employee_id, company_id).await? {
+            return Err(TinaError::Unauthorized(
+                "funcionário fora da empresa".into(),
+            ));
+        }
+
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+
+        let result = sqlx::query(
+            "UPDATE employees SET status = 'active', is_active = 1, deactivated_at = NULL, updated_at = datetime('now') WHERE id = ? AND status = 'inactive'",
+        )
+        .bind(employee_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "funcionário não encontrado ou já ativo".into(),
+            ));
+        }
+
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Atualiza nome e responsabilidades com autoria transacional
+    pub(crate) async fn update_info_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+        name: &str,
+        responsibilities: Option<&str>,
+    ) -> Result<()> {
+        if !self.belongs_to_company(employee_id, company_id).await? {
+            return Err(TinaError::Unauthorized(
+                "funcionário fora da empresa".into(),
+            ));
+        }
+
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+
+        let result = sqlx::query(
+            "UPDATE employees SET name = ?, responsibilities = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(name)
+        .bind(responsibilities)
+        .bind(employee_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other("Employee not found".to_string()).into());
+        }
+
+        commit_owner_write(tx, installation_id).await
+    }
 }

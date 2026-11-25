@@ -580,4 +580,280 @@ impl TinaApp {
         self.owner_access
             .unlock_for_test(self.config.security.session_timeout_seconds)
     }
+
+    /// Cria empresa com auditoria de autoria transacional
+    pub async fn owner_create_company(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::Company> {
+        self.require_owner(Operation::Write)?;
+        let pool = self.database.pool();
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::CompanyRepository::new(pool)
+            .create_as_owner(installation_id, owner_id, name)
+            .await
+    }
+
+    /// Atualiza nome da empresa com verificação de autoria transacional
+    pub async fn owner_update_company_name(
+        &self,
+        company_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::CompanyRepository::new(self.database.pool())
+            .update_name_as_owner(company_id, installation_id, owner_id, new_name)
+            .await
+    }
+
+    /// Arquiva empresa com verificação de autoria transacional
+    pub async fn owner_archive_company(
+        &self,
+        company_id: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::CompanyRepository::new(self.database.pool())
+            .archive_as_owner(company_id, installation_id, owner_id)
+            .await
+    }
+
+    /// Cria departamento com auditoria de autoria transacional
+    pub async fn owner_create_department(
+        &self,
+        company_id: &str,
+        code: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<crate::core::Department> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::DepartmentRepository::new(self.database.pool())
+            .create_as_owner(installation_id, owner_id, company_id, code, name, description)
+            .await
+    }
+
+    /// Atualiza nome do departamento com auditoria de autoria transacional
+    pub async fn owner_update_department_name(
+        &self,
+        department_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::DepartmentRepository::new(self.database.pool())
+            .update_name_as_owner(department_id, installation_id, owner_id, new_name)
+            .await
+    }
+
+    /// Arquiva departamento com auditoria de autoria transacional
+    pub async fn owner_archive_department(
+        &self,
+        department_id: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::DepartmentRepository::new(self.database.pool())
+            .archive_as_owner(department_id, installation_id, owner_id)
+            .await
+    }
+
+    /// Cria cargo com auditoria de autoria transacional
+    pub async fn owner_create_position(
+        &self,
+        department_id: &str,
+        name: &str,
+        level: i32,
+        authority_level: i32,
+        description: Option<&str>,
+    ) -> Result<crate::core::Position> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::PositionRepository::new(self.database.pool())
+            .create_as_owner(installation_id, owner_id, department_id, name, level, authority_level, description)
+            .await
+    }
+
+    /// Atualiza nome do cargo com auditoria de autoria transacional
+    pub async fn owner_update_position_name(
+        &self,
+        position_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::PositionRepository::new(self.database.pool())
+            .update_name_as_owner(position_id, installation_id, owner_id, new_name)
+            .await
+    }
+
+    /// Arquiva cargo com auditoria de autoria transacional
+    pub async fn owner_archive_position(
+        &self,
+        position_id: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::PositionRepository::new(self.database.pool())
+            .archive_as_owner(position_id, installation_id, owner_id)
+            .await
+    }
+
+    /// Cria funcionário com auditoria de autoria transacional
+    pub async fn owner_create_employee(
+        &self,
+        position_id: &str,
+        name: &str,
+        responsibilities: Option<&str>,
+        supervisor_id: Option<&str>,
+    ) -> Result<crate::core::Employee> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        infra::EmployeeRepository::new(self.database.pool())
+            .create_as_owner(installation_id, owner_id, position_id, name, responsibilities, supervisor_id)
+            .await
+    }
+
+    /// Desativa funcionário com auditoria transacional
+    pub async fn owner_deactivate_employee(
+        &self,
+        employee_id: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ? AND c.status = 'active'
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        
+        let company_id = company_id.ok_or_else(|| {
+            TinaError::Other("Funcionário não encontrado".to_string())
+        })?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .deactivate_as_owner(employee_id, installation_id, owner_id, &company_id)
+            .await
+    }
+
+    /// Reativa funcionário com auditoria transacional
+    pub async fn owner_reactivate_employee(
+        &self,
+        employee_id: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::Write)?;
+        let installation_id = &self.config.installation_id;
+        let owner_id = &self.config.owner_uuid;
+        
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ?
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+        
+        let company_id = company_id.ok_or_else(|| {
+            TinaError::Other("Funcionário não encontrado".to_string())
+        })?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .reactivate_as_owner(employee_id, installation_id, owner_id, &company_id)
+            .await
+    }
+
+    /// Lista eventos de auditoria organizacionais para a instalação.
+    /// Filtra por empresa, se especificado. Requer sessão de proprietário ativa.
+    pub async fn owner_audit_events(
+        &self,
+        company_id: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<infra::audit::AuditEvent>> {
+        self.require_owner(Operation::Read)?;
+        if limit == 0 {
+            return Err(TinaError::Validation("limite deve ser positivo".into()));
+        }
+        if let Some(cid) = company_id {
+            let belongs = infra::CompanyRepository::new(self.database.pool())
+                .belongs_to_installation(cid, &self.config.installation_id)
+                .await?;
+            if !belongs {
+                return Err(TinaError::Unauthorized(
+                    "empresa fora da instalação".into(),
+                ));
+            }
+        }
+        infra::audit::list_events(self.database.pool(), &self.config.installation_id, company_id, limit)
+            .await
+    }
+
+    /// Lista eventos de auditoria antes de um cursor, para paginação.
+    pub async fn owner_audit_events_before(
+        &self,
+        company_id: Option<&str>,
+        before_id: &str,
+        limit: i64,
+    ) -> Result<Vec<infra::audit::AuditEvent>> {
+        self.require_owner(Operation::Read)?;
+        if limit == 0 {
+            return Err(TinaError::Validation("limite deve ser positivo".into()));
+        }
+        if let Some(cid) = company_id {
+            let belongs = infra::CompanyRepository::new(self.database.pool())
+                .belongs_to_installation(cid, &self.config.installation_id)
+                .await?;
+            if !belongs {
+                return Err(TinaError::Unauthorized(
+                    "empresa fora da instalação".into(),
+                ));
+            }
+        }
+        infra::audit::list_events_before(
+            self.database.pool(),
+            &self.config.installation_id,
+            company_id,
+            before_id,
+            limit,
+        )
+        .await
+    }
 }

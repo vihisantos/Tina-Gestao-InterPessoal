@@ -142,46 +142,14 @@ pub async fn get_position(
     Ok(PositionDto::from(pos))
 }
 
-/// Cria um novo cargo
+/// Cria um novo cargo (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn create_position(
     state: State<'_, TinaApp>,
     request: CreatePositionRequest,
 ) -> Result<PositionDto, String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let pos_repo = db.positions();
-    let dept_repo = db.departments();
-    let installation_id = get_installation_id(&state);
-
-    let company_repo = db.companies();
-    let companies = company_repo
-        .list_by_installation(&installation_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|c| c.id)
-        .collect::<Vec<_>>();
-
-    let mut found = false;
-    for company_id in companies {
-        if dept_repo
-            .belongs_to_company(&request.department_id, &company_id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err("Departamento não pertence à instalação atual".to_string());
-    }
-
-    let position = pos_repo
-        .create(
+    let position = state
+        .owner_create_position(
             &request.department_id,
             &request.name,
             request.level,
@@ -194,63 +162,26 @@ pub async fn create_position(
     Ok(PositionDto::from(position))
 }
 
-/// Atualiza o nome e descrição do cargo
+/// Atualiza o nome do cargo (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_position(
     state: State<'_, TinaApp>,
     position_id: String,
     request: UpdatePositionRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let pos_repo = db.positions();
-    let installation_id = get_installation_id(&state);
-
-    // Atualiza com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
-    pos_repo
-        .update_name_with_scope(&position_id, &installation_id, &request.name)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    pos_repo
-        .update_description_with_scope(
-            &position_id,
-            &installation_id,
-            request.description.as_deref(),
-        )
+    state
+        .owner_update_position_name(&position_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
-/// Archiva um cargo (não pode ter funcionários ativos)
+/// Archiva um cargo (não pode ter funcionários ativos) - com auditoria de autoria transacional
 #[tauri::command]
 pub async fn archive_position(
     state: State<'_, TinaApp>,
     position_id: String,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let pos_repo = db.positions();
-    let installation_id = get_installation_id(&state);
-
-    // Verificar se pode ser arquivado
-    if !pos_repo
-        .can_archive(&position_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err("Cargo não pode ser arquivado: ainda possui funcionários ativos".to_string());
-    }
-
-    // Arquiva com escopo de instalação aplicado no SQL (verifica pertencimento internamente)
-    pos_repo
-        .archive_with_scope(&position_id, &installation_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    state.owner_archive_position(&position_id).await.map_err(|e| e.to_string())
 }

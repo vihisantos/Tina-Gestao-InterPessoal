@@ -35,6 +35,7 @@
 </script>
 
 <div class="history-shell">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex (histórico rolável acessível por teclado) -->
   <div class="chat-history" role="log" aria-label="Histórico da conversa" aria-live="polite" aria-busy={loading} bind:this={viewport} onscroll={onScroll} tabindex="0">
     <div class="history-content" bind:this={content}>
       {#if !messages.length}<p>Olá! O que vamos fazer hoje?</p>{/if}

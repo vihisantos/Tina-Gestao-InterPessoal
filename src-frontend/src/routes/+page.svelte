@@ -102,12 +102,18 @@
 
   async function saveKey(event: SubmitEvent) {
     event.preventDefault();
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked || !apiKey.trim()) return;
+    const epoch = chatEpoch;
+    const key = apiKey;
+    apiKey = '';
+    chatLoading = true;
     try {
-      await invoke('chat_set_key', { key: apiKey });
+      await invoke('chat_set_key', { key });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
       hasKey = true;
       chatError = '';
-    } catch (cause) { chatError = String(cause); }
-    finally { apiKey = ''; }
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
   }
 
   async function sendChat(event: SubmitEvent) {
@@ -344,8 +350,8 @@
         {#if !hasKey}
           <form onsubmit={saveKey}>
             <label for="nvidia-key">Chave NVIDIA NIM</label>
-            <input id="nvidia-key" type="password" autocomplete="off" required bind:value={apiKey} />
-            <button type="submit">Salvar no cofre Windows</button>
+            <input id="nvidia-key" type="password" autocomplete="off" required disabled={chatLoading || chatBusy} bind:value={apiKey} />
+            <button type="submit" disabled={chatLoading || chatBusy || !apiKey.trim()}>Salvar no cofre Windows</button>
           </form>
         {/if}
         <div class="chat-history" role="log" aria-live="polite" aria-busy={chatLoading}>

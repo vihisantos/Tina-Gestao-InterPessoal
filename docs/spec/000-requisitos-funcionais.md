@@ -90,6 +90,9 @@ qualquer agente diretamente.
 restringe os direitos do proprietário nem a comunicação direta; a hierarquia organiza a operação
 padrão, nunca a autoridade do proprietário.
 
+**R-5.8** Recrutamento de agentes: a Tina identifica necessidades operacionais, consulta a estrutura existente e propõe a criação de cargos ou contratação. O processo de RH prepara um contrato operacional com responsabilidades, limites, supervisão, ferramentas e modelo escolhido mediante avaliação verificável. O proprietário autoriza a contratação antes da ativação.
+*Aceite:* a Tina propõe uma contratação sem depender de comando literal, registra a justificativa, compara modelos NVIDIA disponíveis com evidências de competência, latência e custo quando disponível, mostra o contrato e só efetiva após aprovação; sem evidência suficiente, a contratação não é efetivada.
+
 ## R-6. Comando Central e eventos reais
 
 **R-6.1** O produto oferece uma visão consolidada do que está acontecendo agora — o Comando

@@ -10,6 +10,7 @@ mod db;
 mod department;
 mod employee;
 mod hierarchy;
+mod hr_tools;
 mod installation;
 mod position;
 mod redis;

@@ -34,9 +34,9 @@
   }
 </script>
 {#if proposal}
-  <Card title={proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : 'Posso criar este departamento?'}>
+  <Card title={proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : proposal.tool_name === 'create_position' ? 'Posso criar este cargo?' : 'Posso criar este departamento?'}>
     <p><strong>{proposal.name}</strong>{#if proposal.code} ({proposal.code}){/if}</p>
-    <p>{proposal.tool_name === 'create_department' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
+    <p>{proposal.tool_name !== 'create_organization' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
     {#if proposal.reason}<p><strong>Por que a Tina sugere:</strong> {proposal.reason}</p>{/if}
     {#if proposal.description}<p>{proposal.description}</p>{/if}
     <p>A criação será registrada no banco somente após sua autorização.</p>

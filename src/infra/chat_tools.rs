@@ -10,7 +10,11 @@ use super::chat::ChatMessage;
 use crate::error::{Result, TinaError};
 
 pub(crate) fn definitions() -> Value {
-    json!([department_definition(), organization_definition()])
+    json!([
+        department_definition(),
+        organization_definition(),
+        super::hr_tools::position_definition()
+    ])
 }
 
 fn department_definition() -> Value {
@@ -152,7 +156,7 @@ pub struct DepartmentProposal {
     description: Option<String>,
 }
 
-async fn assistant(
+pub(super) async fn assistant(
     tx: &mut Transaction<'_, Sqlite>,
     installation: &str,
     session: &str,
@@ -191,6 +195,11 @@ pub(crate) async fn propose(
     if name == "create_organization" {
         let args = parse_organization(arguments)?;
         let response = propose_organization(&mut tx, installation, session, user, &args).await?;
+        tx.commit().await?;
+        return Ok(response);
+    }
+    if name == "create_position" {
+        let response = super::hr_tools::propose_position(&mut tx, installation, session, user, arguments).await?;
         tx.commit().await?;
         return Ok(response);
     }
@@ -278,7 +287,7 @@ async fn propose_organization(
     Ok(response)
 }
 
-const PENDING: &str = "SELECT p.id,'create_department' AS tool_name,p.reason,p.company_id,p.company_name,p.organization_kind,p.name,p.code,p.description FROM chat_department_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) UNION ALL SELECT p.id,'create_organization' AS tool_name,p.reason,'' AS company_id,p.name AS company_name,p.organization_kind,p.name,'' AS code,NULL AS description FROM chat_organization_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1)";
+const PENDING: &str = "SELECT p.id,'create_department' AS tool_name,p.reason,p.company_id,p.company_name,p.organization_kind,p.name,p.code,p.description FROM chat_department_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) UNION ALL SELECT p.id,'create_organization' AS tool_name,p.reason,'' AS company_id,p.name AS company_name,p.organization_kind,p.name,'' AS code,NULL AS description FROM chat_organization_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) UNION ALL SELECT p.id,'create_position' AS tool_name,p.reason,p.company_id,p.company_name,p.organization_kind,p.name,'' AS code,('Departamento: ' || p.department_name || char(10) || 'Nível hierárquico: ' || p.level || '; autoridade: 0' || char(10) || p.description) AS description FROM chat_position_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1)";
 
 pub(crate) async fn pending(
     pool: &SqlitePool,
@@ -286,6 +295,8 @@ pub(crate) async fn pending(
     session: &str,
 ) -> Result<Option<DepartmentProposal>> {
     Ok(sqlx::query_as(PENDING)
+        .bind(installation)
+        .bind(session)
         .bind(installation)
         .bind(session)
         .bind(installation)
@@ -304,8 +315,8 @@ pub(crate) async fn decide(
 ) -> Result<ChatMessage> {
     let mut tx = begin_owner_write(pool, installation, owner).await?;
     let previous: Option<(String, String)> = sqlx::query_as(
-        "SELECT status,result_message_id FROM chat_department_proposals WHERE id = ? AND installation_id = ? AND session_id = ? AND result_message_id IS NOT NULL UNION ALL SELECT status,result_message_id FROM chat_organization_proposals WHERE id = ? AND installation_id = ? AND session_id = ? AND result_message_id IS NOT NULL"
-    ).bind(proposal).bind(installation).bind(session).bind(proposal).bind(installation).bind(session).fetch_optional(&mut *tx).await?;
+        "SELECT status,result_message_id FROM chat_department_proposals WHERE id = ? AND installation_id = ? AND session_id = ? AND result_message_id IS NOT NULL UNION ALL SELECT status,result_message_id FROM chat_organization_proposals WHERE id = ? AND installation_id = ? AND session_id = ? AND result_message_id IS NOT NULL UNION ALL SELECT status,result_message_id FROM chat_position_proposals WHERE id = ? AND installation_id = ? AND session_id = ? AND result_message_id IS NOT NULL"
+    ).bind(proposal).bind(installation).bind(session).bind(proposal).bind(installation).bind(session).bind(proposal).bind(installation).bind(session).fetch_optional(&mut *tx).await?;
     if let Some((status, message_id)) = previous {
         if (status == "approved") != approved {
             return Err(TinaError::Validation("proposta já decidida".into()));
@@ -320,10 +331,15 @@ pub(crate) async fn decide(
         .bind(session)
         .bind(installation)
         .bind(session)
+        .bind(installation)
+        .bind(session)
         .fetch_optional(&mut *tx)
         .await?
         .filter(|p: &DepartmentProposal| p.id == proposal)
         .ok_or_else(|| TinaError::Unauthorized("proposta inexistente ou substituída".into()))?;
+    if p.tool_name == "create_position" {
+        return super::hr_tools::decide_position(tx, installation, owner, session, proposal, approved).await;
+    }
     if p.tool_name == "create_organization" {
         return decide_organization(tx, installation, owner, session, &p, approved).await;
     }

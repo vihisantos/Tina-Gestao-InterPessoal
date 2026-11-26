@@ -3,6 +3,8 @@
 mod assignment;
 pub mod audit;
 pub mod chat;
+/// Ferramentas administrativas do chat e propostas persistidas.
+pub mod chat_tools;
 mod company;
 mod db;
 mod department;

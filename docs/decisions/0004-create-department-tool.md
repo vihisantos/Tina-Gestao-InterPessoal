@@ -17,3 +17,7 @@ A Tina deve diferenciar esses contextos, resolver a organização pela identidad
 - Validar CI e testes nativos Windows antes do merge.
 
 A primeira etapa não ativa ferramentas no chat. O cadastro e a semântica pessoal são a base para a integração posterior nesta mesma PR.
+
+## Integração do chat
+
+A rodada NVIDIA anuncia somente `create_department`. Uma proposta persistida requer confirmação local explícita; a decisão, o departamento e a mensagem de resultado são transacionais e idempotentes. A organização precisa existir e pode ser cadastrada na aba Organizações. Não há criação implícita de empresa. A compatibilidade real do modelo NVIDIA e a validação Windows permanecem pendentes.

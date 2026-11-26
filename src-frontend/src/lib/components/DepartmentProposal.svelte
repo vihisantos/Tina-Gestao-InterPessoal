@@ -1,0 +1,53 @@
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
+  import Card from './Card.svelte';
+  type Message = { id: string; role: string; content: string; created_at: string };
+  type Proposal = { id: string; company_name: string; organization_kind: string; name: string; code: string; description?: string | null };
+  let { sessionId, lastMessageId, ondecision }: { sessionId: string; lastMessageId: string; ondecision: (message: Message) => void } = $props();
+  let proposal = $state<Proposal | null>(null);
+  let busy = $state(false);
+  let error = $state('');
+  let epoch = 0;
+  $effect(() => {
+    const session = sessionId;
+    const last = lastMessageId;
+    const current = ++epoch;
+    proposal = null;
+    error = '';
+    if (session && last) {
+      invoke<Proposal | null>('chat_pending_department', { sessionId: session })
+        .then(result => { if (current === epoch) proposal = result; })
+        .catch(() => { if (current === epoch) error = 'Não foi possível consultar a proposta.'; });
+    }
+    return () => { epoch++; };
+  });
+  async function decide(approved: boolean) {
+    if (!proposal || busy) return;
+    const current = epoch;
+    busy = true;
+    error = '';
+    try {
+      const result = await invoke<Message>('chat_decide_department', { sessionId, proposalId: proposal.id, approved });
+      if (current === epoch) { proposal = null; ondecision(result); }
+    } catch (cause) { if (current === epoch) error = String(cause); }
+    finally { busy = false; }
+  }
+</script>
+{#if proposal}
+  <Card title="Autorizar criação de departamento">
+    <p><strong>{proposal.name}</strong> ({proposal.code})</p>
+    <p>Organização: {proposal.company_name} — {proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
+    {#if proposal.description}<p>{proposal.description}</p>{/if}
+    <p>A criação será registrada no banco somente após sua autorização.</p>
+    <div class="actions">
+      <button type="button" disabled={busy} onclick={() => decide(true)}>Confirmar criação</button>
+      <button type="button" disabled={busy} onclick={() => decide(false)}>Recusar</button>
+    </div>
+  </Card>
+{/if}
+{#if error}<p role="alert">{error}</p>{/if}
+<style>
+  .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  button { font: inherit; padding: .65rem; border: 1px solid var(--tina-border-strong); border-radius: var(--tina-radius-sm); background: var(--tina-surface); color: inherit; }
+  button:focus-visible { outline: 2px solid var(--tina-pink); }
+</style>

@@ -119,6 +119,104 @@ fn chat_limits(app: State<'_, TinaApp>) -> Result<tina::infra::chat::ChatLimits,
     Ok(app.chat_limits())
 }
 
+/// Apenas URLs web explícitas, sem credenciais ou caracteres de controle.
+fn validate_external_url(input: &str) -> Result<tauri::Url, String> {
+    let invalid = || "Link externo inválido ou não permitido.".to_string();
+    if input.len() > 8192
+        || input.chars().any(|c| c.is_control() || c.is_whitespace())
+        || input.contains('\\')
+        || !(input.starts_with("https://") || input.starts_with("http://"))
+    {
+        return Err(invalid());
+    }
+    let url = tauri::Url::parse(input).map_err(|_| invalid())?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(invalid());
+    }
+    Ok(url)
+}
+
+#[cfg(target_os = "windows")]
+fn open_external_url(url: &tauri::Url) -> Result<(), String> {
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut std::ffi::c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show: i32,
+        ) -> isize;
+    }
+    let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+    let target: Vec<u16> = url.as_str().encode_utf16().chain(Some(0)).collect();
+    // SAFETY: strings UTF-16 terminadas em NUL permanecem válidas na chamada.
+    // A URL foi validada e é entregue diretamente ao Windows, sem cmd/PowerShell.
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+        )
+    };
+    if result <= 32 {
+        return Err("Não foi possível abrir o navegador padrão.".into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_external_url(_url: &tauri::Url) -> Result<(), String> {
+    Err("Abertura de links disponível apenas no Windows.".into())
+}
+
+/// Abre somente links web, após clique do proprietário autenticado.
+#[tauri::command]
+fn chat_open_link(app: State<'_, TinaApp>, url: String) -> Result<(), String> {
+    app.require_owner(tina::core::authorization::Operation::Read)
+        .map_err(|e| e.to_string())?;
+    let url = validate_external_url(&url)?;
+    open_external_url(&url)
+}
+
+#[cfg(test)]
+mod external_link_tests {
+    use super::validate_external_url;
+
+    #[test]
+    fn only_explicit_web_urls_are_accepted() {
+        for value in [
+            "https://github.com/",
+            "http://example.com/path?a=1&b=2",
+            "https://example.com/arquivo%20com%20espaco",
+        ] {
+            assert!(validate_external_url(value).is_ok(), "{value}");
+        }
+        for value in [
+            "file:///C:/Windows",
+            "javascript:alert(1)",
+            "data:text/html,hello",
+            "ms-settings:",
+            "//example.com",
+            "https://",
+            "https://user:password@example.com",
+            "https://example.com\\path",
+            "https://example.com/\n",
+            " https://example.com",
+        ] {
+            assert!(validate_external_url(value).is_err(), "{value}");
+        }
+    }
+}
+
 struct ActiveRun {
     id: String,
     cancel: tokio::sync::watch::Sender<bool>,
@@ -269,6 +367,7 @@ fn main() {
             chat_generate,
             chat_cancel,
             chat_limits,
+            chat_open_link,
             chat_set_key,
             chat_has_key,
             chat_delete_key,

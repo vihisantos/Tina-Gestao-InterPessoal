@@ -1229,3 +1229,52 @@ async fn test_employee_status_is_active_consistency() {
 
     cleanup_test_db(&path);
 }
+
+
+#[tokio::test]
+async fn test_employee_permanent_identity() {
+    let (db, path) = setup_test_db("permanent_identity").await;
+    let (_, company_id, department_id, position_id) = setup_organization(&db).await;
+    let repo = EmployeeRepository::new(db.pool());
+    let employee = repo
+        .create(&position_id, "Original", None, None)
+        .await
+        .unwrap();
+    let second = PositionRepository::new(db.pool())
+        .create(&department_id, "Novo cargo", 2, 500, None)
+        .await
+        .unwrap();
+
+    repo.update_info(&employee.id, &company_id, "Novo nome", None)
+        .await
+        .unwrap();
+    repo.change_position(&employee.id, &company_id, &second.id)
+        .await
+        .unwrap();
+    repo.deactivate(&employee.id, &company_id).await.unwrap();
+    assert_eq!(repo.find_by_id(&employee.id).await.unwrap().id, employee.id);
+    repo.reactivate(&employee.id, &company_id).await.unwrap();
+    assert_eq!(repo.find_by_id(&employee.id).await.unwrap().id, employee.id);
+
+    let mutation = sqlx::query("UPDATE employees SET id = ? WHERE id = ?")
+        .bind("forged-id")
+        .bind(&employee.id)
+        .execute(db.pool())
+        .await;
+    assert!(mutation
+        .unwrap_err()
+        .to_string()
+        .contains("employee identity is immutable"));
+
+    let deletion = sqlx::query("DELETE FROM employees WHERE id = ?")
+        .bind(&employee.id)
+        .execute(db.pool())
+        .await;
+    assert!(deletion
+        .unwrap_err()
+        .to_string()
+        .contains("deactivate employee instead of deleting identity"));
+    assert_eq!(repo.find_by_id(&employee.id).await.unwrap().id, employee.id);
+    drop(db);
+    cleanup_test_db(&path);
+}

@@ -1,4 +1,4 @@
-﻿//! Tina Platform Ã¢â‚¬â€ inteligÃƒÂªncia pessoal e operacional.
+//! Tina Platform Ã¢â‚¬â€ inteligÃƒÂªncia pessoal e operacional.
 //!
 //! Este crate ÃƒÂ© o **nÃƒÂºcleo** da aplicaÃƒÂ§ÃƒÂ£o desktop. Ele nÃƒÂ£o contÃƒÂ©m entry point:
 //! o executÃƒÂ¡vel ÃƒÂ© `src-tauri/src/main.rs`, que o utiliza como biblioteca.
@@ -582,44 +582,34 @@ impl TinaApp {
     }
 
     /// Cria empresa com auditoria de autoria transacional
-    pub async fn owner_create_company(
-        &self,
-        name: &str,
-    ) -> Result<crate::core::Company> {
+    pub async fn owner_create_company(&self, name: &str) -> Result<crate::core::Company> {
         self.require_owner(Operation::Write)?;
         let pool = self.database.pool();
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::CompanyRepository::new(pool)
             .create_as_owner(installation_id, owner_id, name)
             .await
     }
 
     /// Atualiza nome da empresa com verificação de autoria transacional
-    pub async fn owner_update_company_name(
-        &self,
-        company_id: &str,
-        new_name: &str,
-    ) -> Result<()> {
+    pub async fn owner_update_company_name(&self, company_id: &str, new_name: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::CompanyRepository::new(self.database.pool())
             .update_name_as_owner(company_id, installation_id, owner_id, new_name)
             .await
     }
 
     /// Arquiva empresa com verificação de autoria transacional
-    pub async fn owner_archive_company(
-        &self,
-        company_id: &str,
-    ) -> Result<()> {
+    pub async fn owner_archive_company(&self, company_id: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::CompanyRepository::new(self.database.pool())
             .archive_as_owner(company_id, installation_id, owner_id)
             .await
@@ -636,9 +626,16 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::DepartmentRepository::new(self.database.pool())
-            .create_as_owner(installation_id, owner_id, company_id, code, name, description)
+            .create_as_owner(
+                installation_id,
+                owner_id,
+                company_id,
+                code,
+                name,
+                description,
+            )
             .await
     }
 
@@ -651,21 +648,18 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::DepartmentRepository::new(self.database.pool())
             .update_name_as_owner(department_id, installation_id, owner_id, new_name)
             .await
     }
 
     /// Arquiva departamento com auditoria de autoria transacional
-    pub async fn owner_archive_department(
-        &self,
-        department_id: &str,
-    ) -> Result<()> {
+    pub async fn owner_archive_department(&self, department_id: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::DepartmentRepository::new(self.database.pool())
             .archive_as_owner(department_id, installation_id, owner_id)
             .await
@@ -683,9 +677,17 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::PositionRepository::new(self.database.pool())
-            .create_as_owner(installation_id, owner_id, department_id, name, level, authority_level, description)
+            .create_as_owner(
+                installation_id,
+                owner_id,
+                department_id,
+                name,
+                level,
+                authority_level,
+                description,
+            )
             .await
     }
 
@@ -698,21 +700,18 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::PositionRepository::new(self.database.pool())
             .update_name_as_owner(position_id, installation_id, owner_id, new_name)
             .await
     }
 
     /// Arquiva cargo com auditoria de autoria transacional
-    pub async fn owner_archive_position(
-        &self,
-        position_id: &str,
-    ) -> Result<()> {
+    pub async fn owner_archive_position(&self, position_id: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::PositionRepository::new(self.database.pool())
             .archive_as_owner(position_id, installation_id, owner_id)
             .await
@@ -727,7 +726,7 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::PositionRepository::new(self.database.pool())
             .update_description_as_owner(position_id, installation_id, owner_id, description)
             .await
@@ -743,7 +742,7 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::PositionRepository::new(self.database.pool())
             .update_details_as_owner(position_id, installation_id, owner_id, name, description)
             .await
@@ -758,7 +757,7 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::DepartmentRepository::new(self.database.pool())
             .update_description_as_owner(department_id, installation_id, owner_id, description)
             .await
@@ -774,7 +773,7 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::DepartmentRepository::new(self.database.pool())
             .update_details_as_owner(department_id, installation_id, owner_id, name, description)
             .await
@@ -804,13 +803,18 @@ impl TinaApp {
         .bind(employee_id)
         .fetch_optional(self.database.pool())
         .await?;
-        
-        let company_id = company_id.ok_or_else(|| {
-            TinaError::Other("Funcionário não encontrado".to_string())
-        })?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
 
         infra::EmployeeRepository::new(self.database.pool())
-            .update_supervisor_as_owner(employee_id, installation_id, owner_id, &company_id, supervisor_id)
+            .update_supervisor_as_owner(
+                employee_id,
+                installation_id,
+                owner_id,
+                &company_id,
+                supervisor_id,
+            )
             .await
     }
 
@@ -825,9 +829,16 @@ impl TinaApp {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         infra::EmployeeRepository::new(self.database.pool())
-            .create_as_owner(installation_id, owner_id, position_id, name, responsibilities, supervisor_id)
+            .create_as_owner(
+                installation_id,
+                owner_id,
+                position_id,
+                name,
+                responsibilities,
+                supervisor_id,
+            )
             .await
     }
 
@@ -856,13 +867,19 @@ impl TinaApp {
         .bind(employee_id)
         .fetch_optional(self.database.pool())
         .await?;
-        
-        let company_id = company_id.ok_or_else(|| {
-            TinaError::Other("Funcionário não encontrado".to_string())
-        })?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
 
         infra::EmployeeRepository::new(self.database.pool())
-            .update_info_as_owner(employee_id, installation_id, owner_id, &company_id, name, responsibilities)
+            .update_info_as_owner(
+                employee_id,
+                installation_id,
+                owner_id,
+                &company_id,
+                name,
+                responsibilities,
+            )
             .await
     }
 
@@ -890,25 +907,27 @@ impl TinaApp {
         .bind(employee_id)
         .fetch_optional(self.database.pool())
         .await?;
-        
-        let company_id = company_id.ok_or_else(|| {
-            TinaError::Other("Funcionário não encontrado".to_string())
-        })?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
 
         infra::EmployeeRepository::new(self.database.pool())
-            .update_responsibilities_as_owner(employee_id, installation_id, owner_id, &company_id, responsibilities)
+            .update_responsibilities_as_owner(
+                employee_id,
+                installation_id,
+                owner_id,
+                &company_id,
+                responsibilities,
+            )
             .await
     }
 
     /// Desativa funcionário com auditoria transacional
-    pub async fn owner_deactivate_employee(
-        &self,
-        employee_id: &str,
-    ) -> Result<()> {
+    pub async fn owner_deactivate_employee(&self, employee_id: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         // Obter company_id
         let company_id: Option<String> = sqlx::query_scalar(
             r#"
@@ -923,25 +942,79 @@ impl TinaApp {
         .bind(employee_id)
         .fetch_optional(self.database.pool())
         .await?;
-        
-        let company_id = company_id.ok_or_else(|| {
-            TinaError::Other("Funcionário não encontrado".to_string())
-        })?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
 
         infra::EmployeeRepository::new(self.database.pool())
             .deactivate_as_owner(employee_id, installation_id, owner_id, &company_id)
             .await
     }
 
-    /// Reativa funcionário com auditoria transacional
-    pub async fn owner_reactivate_employee(
+    /// Alterar cargo do funcionário com autoria transacional
+    pub async fn owner_change_employee_position(
         &self,
         employee_id: &str,
-    ) -> Result<()> {
+        new_position_id: &str,
+        reason: Option<&str>,
+    ) -> Result<crate::core::assignment::PositionChange> {
+        let pool = self.database.pool();
+        let installation_id = self.config.installation_id.clone();
+
+        // Verificar sessão antes de qualquer operação
+        if !self.owner_access.is_unlocked()? {
+            // Registrar tentativa de escrita negada
+            let _ = infra::audit::record_denied_owner_audit_write(
+                pool,
+                &installation_id,
+                "employee",
+                employee_id,
+                "position_change",
+            )
+            .await;
+            return Err(TinaError::Unauthorized(
+                "sessão do proprietário bloqueada".into(),
+            ));
+        }
+
+        let owner_id = &self.config.owner_uuid;
+
+        // Obter company_id
+        let company_id: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT c.id
+            FROM employees e
+            JOIN positions p ON e.position_id = p.id
+            JOIN departments d ON p.department_id = d.id
+            JOIN companies c ON d.company_id = c.id
+            WHERE e.id = ? AND c.status = 'active'
+            "#,
+        )
+        .bind(employee_id)
+        .fetch_optional(self.database.pool())
+        .await?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
+
+        infra::EmployeeRepository::new(self.database.pool())
+            .change_position_with_owner_as_owner(
+                employee_id,
+                &installation_id,
+                owner_id,
+                &company_id,
+                new_position_id,
+                reason,
+            )
+            .await
+    }
+
+    /// Reativa funcionário com auditoria transacional
+    pub async fn owner_reactivate_employee(&self, employee_id: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;
         let installation_id = &self.config.installation_id;
         let owner_id = &self.config.owner_uuid;
-        
+
         // Obter company_id
         let company_id: Option<String> = sqlx::query_scalar(
             r#"
@@ -956,10 +1029,9 @@ impl TinaApp {
         .bind(employee_id)
         .fetch_optional(self.database.pool())
         .await?;
-        
-        let company_id = company_id.ok_or_else(|| {
-            TinaError::Other("Funcionário não encontrado".to_string())
-        })?;
+
+        let company_id =
+            company_id.ok_or_else(|| TinaError::Other("Funcionário não encontrado".to_string()))?;
 
         infra::EmployeeRepository::new(self.database.pool())
             .reactivate_as_owner(employee_id, installation_id, owner_id, &company_id)
@@ -976,18 +1048,15 @@ impl TinaApp {
         // Verificar sessão antes de qualquer operação
         let pool = self.database.pool();
         let installation_id = self.config.installation_id.clone();
-        
+
         if !self.owner_access.is_unlocked()? {
             // Registrar tentativa de acesso negada apenas quando falha
-            infra::audit::record_denied_owner_audit_read(
-                pool,
-                &installation_id,
-            ).await?;
+            infra::audit::record_denied_owner_audit_read(pool, &installation_id).await?;
             return Err(TinaError::Unauthorized(
                 "sessão do proprietário bloqueada".into(),
             ));
         }
-        
+
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));
         }
@@ -996,13 +1065,10 @@ impl TinaApp {
                 .belongs_to_installation(cid, &installation_id)
                 .await?;
             if !belongs {
-                return Err(TinaError::Unauthorized(
-                    "empresa fora da instalação".into(),
-                ));
+                return Err(TinaError::Unauthorized("empresa fora da instalação".into()));
             }
         }
-        infra::audit::list_events(pool, &installation_id, company_id, limit)
-            .await
+        infra::audit::list_events(pool, &installation_id, company_id, limit).await
     }
 
     /// Lista eventos de auditoria antes de um cursor, para paginação.
@@ -1015,18 +1081,15 @@ impl TinaApp {
         // Verificar sessão antes de qualquer operação
         let pool = self.database.pool();
         let installation_id = self.config.installation_id.clone();
-        
+
         if !self.owner_access.is_unlocked()? {
             // Registrar tentativa de acesso negada apenas quando falha
-            infra::audit::record_denied_owner_audit_read(
-                pool,
-                &installation_id,
-            ).await?;
+            infra::audit::record_denied_owner_audit_read(pool, &installation_id).await?;
             return Err(TinaError::Unauthorized(
                 "sessão do proprietário bloqueada".into(),
             ));
         }
-        
+
         if limit == 0 {
             return Err(TinaError::Validation("limite deve ser positivo".into()));
         }
@@ -1035,18 +1098,9 @@ impl TinaApp {
                 .belongs_to_installation(cid, &installation_id)
                 .await?;
             if !belongs {
-                return Err(TinaError::Unauthorized(
-                    "empresa fora da instalação".into(),
-                ));
+                return Err(TinaError::Unauthorized("empresa fora da instalação".into()));
             }
         }
-        infra::audit::list_events_before(
-            pool,
-            &installation_id,
-            company_id,
-            before_id,
-            limit,
-        )
-        .await
+        infra::audit::list_events_before(pool, &installation_id, company_id, before_id, limit).await
     }
 }

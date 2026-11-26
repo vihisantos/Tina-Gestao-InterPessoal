@@ -378,6 +378,32 @@ impl<'a> EmployeeRepository<'a> {
             .await
     }
 
+    /// Alterar cargo com autoria transacional.
+    /// Usado pelo TinaApp quando a sessão está desbloqueada.
+    pub(crate) async fn change_position_with_owner_as_owner(
+        &self,
+        employee_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        company_id: &str,
+        new_position_id: &str,
+        reason: Option<&str>,
+    ) -> Result<crate::core::assignment::PositionChange> {
+        // Primeiro obter o company_id se não for fornecido
+        let _company_id = company_id; // Já fornecido
+
+        crate::infra::AssignmentService::new(self.pool)
+            .change_position_with_owner(
+                employee_id,
+                company_id,
+                installation_id,
+                owner_id,
+                new_position_id,
+                reason,
+            )
+            .await
+    }
+
     /// Associar superior direto (relacionamento próprio).
     ///
     /// Delega ao [`crate::infra::HierarchyService`]: valida empresa, estado
@@ -702,7 +728,14 @@ impl<'a> EmployeeRepository<'a> {
         }
 
         crate::infra::HierarchyService::new(self.pool)
-            .set_supervisor_with_owner(employee_id, company_id, installation_id, owner_id, supervisor_id, None)
+            .set_supervisor_with_owner(
+                employee_id,
+                company_id,
+                installation_id,
+                owner_id,
+                supervisor_id,
+                None,
+            )
             .await?;
 
         Ok(())

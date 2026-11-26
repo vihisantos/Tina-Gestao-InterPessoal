@@ -370,7 +370,7 @@ impl<'a> HierarchyService<'a> {
         reason: Option<&str>,
     ) -> Result<SupervisorChange> {
         let mut tx = self.pool.begin().await?;
-        
+
         // Passo 1: Inserir contexto de autoria - falha se owner_uuid inválido
         let inserted = sqlx::query(
             "INSERT INTO organizational_audit_actor_context (installation_id, actor_id) \
@@ -380,17 +380,17 @@ impl<'a> HierarchyService<'a> {
         .bind(owner_uuid)
         .execute(&mut *tx)
         .await?;
-        
+
         if inserted.rows_affected() == 0 {
             let _ = tx.rollback().await;
             return Err(TinaError::Unauthorized(
                 "identidade de auditoria inválida".into(),
             ));
         }
-        
+
         // Passo 2: Iniciar transação e validar escopo (sem BEGIN separado)
         // A inserção acima já validou o owner_uuid via subquery
-        
+
         // Passo 3: Executar alteração do supervisor com validações originais
         let outcome = self
             .apply_supervisor_change_in_transaction(
@@ -406,19 +406,23 @@ impl<'a> HierarchyService<'a> {
         match outcome {
             Ok(change) => {
                 // Passo 4: Remover contexto antes do COMMIT
-                sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
-                    .bind(installation_id)
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await?;
                 tx.commit().await?;
                 Ok(change)
             }
             Err(error) => {
                 // Passo 5: Remover contexto antes do ROLLBACK
-                let _ = sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
-                    .bind(installation_id)
-                    .execute(&mut *tx)
-                    .await;
+                let _ = sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await;
                 let _ = tx.rollback().await;
                 Err(error)
             }

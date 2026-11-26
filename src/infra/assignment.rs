@@ -293,4 +293,148 @@ impl<'a> AssignmentService<'a> {
 
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    /// Altera o cargo com autoria transacional.
+    ///
+    /// Similar a [`Self::change_position`] mas insere/remover o contexto de
+    /// auditoria antes/depois da operação, permitindo que os triggers capturem
+    /// o actor correto. O `owner_uuid` deve ser o UUID do proprietário da
+    /// instalação.
+    ///
+    /// Usa uma única transação SQLx para garantir atomicidade entre:
+    /// inserção do contexto de autoria, validação de escopo, alteração do
+    /// cargo, registro do histórico, remoção do contexto e confirmação.
+    pub async fn change_position_with_owner(
+        &self,
+        employee_id: &str,
+        company_id: &str,
+        installation_id: &str,
+        owner_uuid: &str,
+        new_position_id: &str,
+        reason: Option<&str>,
+    ) -> Result<PositionChange> {
+        let mut tx = self.pool.begin().await?;
+
+        // Passo 1: Inserir contexto de autoria - falha se owner_uuid inválido
+        let inserted = sqlx::query(
+            "INSERT INTO organizational_audit_actor_context (installation_id, actor_id) \
+             SELECT id, owner_uuid FROM installations WHERE id = ? AND owner_uuid = ?",
+        )
+        .bind(installation_id)
+        .bind(owner_uuid)
+        .execute(&mut *tx)
+        .await?;
+
+        if inserted.rows_affected() == 0 {
+            let _ = tx.rollback().await;
+            return Err(TinaError::Unauthorized(
+                "identidade de auditoria inválida".into(),
+            ));
+        }
+
+        // Passo 2: Executar a mudança de cargo dentro da transação
+        let outcome = self
+            .apply_change_in_transaction(
+                &mut tx,
+                employee_id,
+                company_id,
+                new_position_id,
+                reason,
+                Some(owner_uuid),
+            )
+            .await;
+
+        match outcome {
+            Ok(change) => {
+                // Passo 3: Remover contexto antes do COMMIT
+                sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                Ok(change)
+            }
+            Err(error) => {
+                // Passo 4: Remover contexto antes do ROLLBACK
+                let _ = sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await;
+                let _ = tx.rollback().await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Versão de apply_change que usa conexão transacional existente
+    /// sem gerenciar sua própria transação.
+    async fn apply_change_in_transaction(
+        &self,
+        conn: &mut SqliteConnection,
+        employee_id: &str,
+        company_id: &str,
+        new_position_id: &str,
+        reason: Option<&str>,
+        author_id: Option<&str>,
+    ) -> Result<PositionChange> {
+        let (previous_position_id, previous_department_id) =
+            AssignmentRepository::current_assignment(conn, employee_id, company_id)
+                .await?
+                .ok_or_else(|| {
+                    TinaError::Other("Employee not found or doesn't belong to company".to_string())
+                })?;
+
+        let new_department_id =
+            AssignmentRepository::active_position_department(conn, new_position_id, company_id)
+                .await?
+                .ok_or_else(|| {
+                    TinaError::Other(
+                        "Position not found, inactive, or doesn't belong to the same company"
+                            .to_string(),
+                    )
+                })?;
+
+        if previous_position_id == new_position_id {
+            return Ok(PositionChange {
+                employee_id: employee_id.to_string(),
+                previous_position_id,
+                new_position_id: new_position_id.to_string(),
+                previous_department_id,
+                new_department_id,
+                recorded: false,
+            });
+        }
+
+        let updated =
+            AssignmentRepository::update_position(conn, employee_id, new_position_id).await?;
+
+        if !updated {
+            return Err(TinaError::Other("Employee not found".to_string()));
+        }
+
+        AssignmentRepository::insert_history(
+            conn,
+            employee_id,
+            &previous_position_id,
+            new_position_id,
+            &previous_department_id,
+            &new_department_id,
+            reason,
+            author_id,
+        )
+        .await?;
+
+        Ok(PositionChange {
+            employee_id: employee_id.to_string(),
+            previous_position_id,
+            new_position_id: new_position_id.to_string(),
+            previous_department_id,
+            new_department_id,
+            recorded: true,
+        })
+    }
 }

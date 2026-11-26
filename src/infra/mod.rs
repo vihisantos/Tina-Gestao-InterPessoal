@@ -15,6 +15,7 @@ mod telemetry;
 
 pub(crate) use audit::begin_owner_write;
 pub(crate) use audit::commit_owner_write;
+pub(crate) use audit::record_denied_owner_audit_write;
 
 pub use assignment::*;
 pub use company::*;

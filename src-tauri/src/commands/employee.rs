@@ -200,10 +200,7 @@ pub async fn update_employee_responsibilities(
     request: UpdateResponsibilitiesRequest,
 ) -> Result<(), String> {
     state
-        .owner_update_employee_responsibilities(
-            &employee_id,
-            request.responsibilities.as_deref(),
-        )
+        .owner_update_employee_responsibilities(&employee_id, request.responsibilities.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -249,10 +246,7 @@ pub async fn assign_employee_supervisor(
     request: AssignSupervisorRequest,
 ) -> Result<(), String> {
     state
-        .owner_update_employee_supervisor(
-            &employee_id,
-            request.supervisor_id.as_deref(),
-        )
+        .owner_update_employee_supervisor(&employee_id, request.supervisor_id.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -265,7 +259,10 @@ pub async fn deactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    state.owner_deactivate_employee(&employee_id).await.map_err(|e| e.to_string())
+    state
+        .owner_deactivate_employee(&employee_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Reativa um funcionário previamente desativado - com auditoria de autoria transacional
@@ -274,7 +271,10 @@ pub async fn reactivate_employee(
     state: State<'_, TinaApp>,
     employee_id: String,
 ) -> Result<(), String> {
-    state.owner_reactivate_employee(&employee_id).await.map_err(|e| e.to_string())
+    state
+        .owner_reactivate_employee(&employee_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

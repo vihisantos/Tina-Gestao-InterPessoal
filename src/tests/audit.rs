@@ -373,7 +373,8 @@ async fn fresh_installation_and_restart_do_not_seed_organization() {
 async fn concurrent_writes_serialize_correctly() {
     // SQLite serializa escritores, mas precisamos garantir atomicidade
     // Este teste verifica que begin_owner_write funciona corretamente com pool válido
-    let file = std::env::temp_dir().join(format!("tina-audit-concurrent-{}.db", uuid::Uuid::new_v4()));
+    let file =
+        std::env::temp_dir().join(format!("tina-audit-concurrent-{}.db", uuid::Uuid::new_v4()));
     let app = crate::TinaApp::initialize_at(&file, "concurrent-install", "concurrent-owner")
         .await
         .unwrap();
@@ -381,7 +382,9 @@ async fn concurrent_writes_serialize_correctly() {
     let pool = app.database().pool();
 
     // Verificar que begin_owner_write funciona corretamente - sem guardar o transaction
-    let result = crate::infra::audit::begin_owner_write(pool, "concurrent-install", "concurrent-owner").await;
+    let result =
+        crate::infra::audit::begin_owner_write(pool, "concurrent-install", "concurrent-owner")
+            .await;
     // Deve ser sucesso no primeiro acesso
     assert!(result.is_ok());
     let tx = result.unwrap();
@@ -434,7 +437,8 @@ async fn failed_operation_does_not_create_audit_event() {
 
     // Esta tentativa de archive deve falhar
     let result = CompanyRepository::new(app.database().pool())
-        .archive_as_owner(&company.id, "fail-install", "fail-owner").await;
+        .archive_as_owner(&company.id, "fail-install", "fail-owner")
+        .await;
     assert!(result.is_err());
 
     // Eventos não deve ter aumentado após a tentativa falha
@@ -457,7 +461,8 @@ async fn failed_operation_does_not_create_audit_event() {
 
 #[tokio::test]
 async fn wrong_owner_cannot_attribute_events() {
-    let file = std::env::temp_dir().join(format!("tina-audit-escalation-{}.db", uuid::Uuid::new_v4()));
+    let file =
+        std::env::temp_dir().join(format!("tina-audit-escalation-{}.db", uuid::Uuid::new_v4()));
     let app = crate::TinaApp::initialize_at(&file, "escalation-install", "escalation-owner")
         .await
         .unwrap();
@@ -475,9 +480,14 @@ async fn wrong_owner_cannot_attribute_events() {
         .unwrap();
 
     // Verificar o evento foi atribuído corretamente
-    let events = crate::infra::audit::list_events(app.database().pool(), "escalation-install", Some(&company.id), 10)
-        .await
-        .unwrap();
+    let events = crate::infra::audit::list_events(
+        app.database().pool(),
+        "escalation-install",
+        Some(&company.id),
+        10,
+    )
+    .await
+    .unwrap();
 
     for event in &events {
         if event.entity_id == company.id {
@@ -492,7 +502,8 @@ async fn wrong_owner_cannot_attribute_events() {
 
 #[tokio::test]
 async fn audit_events_cannot_be_modified_or_deleted() {
-    let file = std::env::temp_dir().join(format!("tina-audit-immutable-{}.db", uuid::Uuid::new_v4()));
+    let file =
+        std::env::temp_dir().join(format!("tina-audit-immutable-{}.db", uuid::Uuid::new_v4()));
     let app = crate::TinaApp::initialize_at(&file, "immutable-install", "immutable-owner")
         .await
         .unwrap();
@@ -537,7 +548,8 @@ async fn audit_events_cannot_be_modified_or_deleted() {
 async fn update_supervisor_as_owner_creates_proper_audit_event() {
     // Teste: update_supervisor_as_owner deve usar begin_owner_write/commit_owner_write
     // para criar eventos de auditoria com o actor correto
-    let file = std::env::temp_dir().join(format!("tina-audit-supervisor-{}.db", uuid::Uuid::new_v4()));
+    let file =
+        std::env::temp_dir().join(format!("tina-audit-supervisor-{}.db", uuid::Uuid::new_v4()));
     let app = crate::TinaApp::initialize_at(&file, "supervisor-install", "supervisor-owner")
         .await
         .unwrap();
@@ -548,19 +560,47 @@ async fn update_supervisor_as_owner_creates_proper_audit_event() {
     app.unlock_owner_for_test().unwrap();
 
     // Criar empresa, departamento, cargo
-    let company = CompanyRepository::new(pool).create("supervisor-install", "Empresa Teste").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT-001", "Teste", None).await.unwrap();
-    let position = PositionRepository::new(pool).create(&dept.id, "Cargo 1", 1, 1, None).await.unwrap();
-    
+    let company = CompanyRepository::new(pool)
+        .create("supervisor-install", "Empresa Teste")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT-001", "Teste", None)
+        .await
+        .unwrap();
+    let position = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 1", 1, 1, None)
+        .await
+        .unwrap();
+
     let emp1 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("supervisor-install", "supervisor-owner", &position.id, "Funcionário 1", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "supervisor-install",
+            "supervisor-owner",
+            &position.id,
+            "Funcionário 1",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Criar segundo funcionário para ser supervisor (não auto-supervisão)
-    let position2 = PositionRepository::new(pool).create(&dept.id, "Cargo 2", 2, 2, None).await.unwrap();
+    let position2 = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 2", 2, 2, None)
+        .await
+        .unwrap();
     let emp2 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("supervisor-install", "supervisor-owner", &position2.id, "Funcionário 2", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "supervisor-install",
+            "supervisor-owner",
+            &position2.id,
+            "Funcionário 2",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Atualizar supervisor (emp1 sob emp2)
     app.owner_update_employee_supervisor(&emp1.id, Some(&emp2.id))
@@ -572,11 +612,21 @@ async fn update_supervisor_as_owner_creates_proper_audit_event() {
         .await
         .unwrap();
 
-    let update_event = events.iter().find(|e| e.entity_type == "employee" && e.action == "updated");
+    let update_event = events
+        .iter()
+        .find(|e| e.entity_type == "employee" && e.action == "updated");
     assert!(update_event.is_some(), "Deve existir evento de atualização");
     let event = update_event.unwrap();
-    assert_eq!(event.actor_type.as_deref(), Some("owner"), "Actor type deve ser 'owner'");
-    assert_eq!(event.actor_id.as_deref(), Some("supervisor-owner"), "Actor ID deve ser o owner UUID");
+    assert_eq!(
+        event.actor_type.as_deref(),
+        Some("owner"),
+        "Actor type deve ser 'owner'"
+    );
+    assert_eq!(
+        event.actor_id.as_deref(),
+        Some("supervisor-owner"),
+        "Actor ID deve ser o owner UUID"
+    );
 
     drop(app);
     let _ = std::fs::remove_file(file);
@@ -612,13 +662,16 @@ async fn audit_query_does_not_create_denied_event_for_authorized_session() {
     .await
     .unwrap();
 
-    assert_eq!(final_events, 0, "Não deve criar eventos denied para sessão autorizada");
+    assert_eq!(
+        final_events, 0,
+        "Não deve criar eventos denied para sessão autorizada"
+    );
 
     drop(app);
     let _ = std::fs::remove_file(file);
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn denied_operations_are_auditied() {
     // Teste: Operações administrativas negadas devem ser auditadas
     let file = std::env::temp_dir().join(format!("tina-audit-denied-{}.db", uuid::Uuid::new_v4()));
@@ -642,7 +695,10 @@ async fn denied_operations_are_auditied() {
     .unwrap();
 
     // Deve ter pelo menos 1 evento denied
-    assert!(!denied_events.is_empty(), "Deve registrar evento denied para sessão bloqueada");
+    assert!(
+        !denied_events.is_empty(),
+        "Deve registrar evento denied para sessão bloqueada"
+    );
 
     drop(app);
     let _ = std::fs::remove_file(file);
@@ -655,7 +711,10 @@ async fn denied_operations_are_auditied() {
 #[tokio::test]
 async fn supervisor_change_single_transaction_rollback_on_error() {
     // Teste: rollback limpa contexto de auditoria mesmo em falha
-    let file = std::env::temp_dir().join(format!("tina-audit-rollback-tx-{}.db", uuid::Uuid::new_v4()));
+    let file = std::env::temp_dir().join(format!(
+        "tina-audit-rollback-tx-{}.db",
+        uuid::Uuid::new_v4()
+    ));
     let app = crate::TinaApp::initialize_at(&file, "rollback-install", "rollback-owner")
         .await
         .unwrap();
@@ -664,26 +723,47 @@ async fn supervisor_change_single_transaction_rollback_on_error() {
     let pool = app.database().pool();
 
     // Criar empresa, departamento, cargo
-    let company = CompanyRepository::new(pool).create("rollback-install", "Empresa Teste").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT-001", "Teste", None).await.unwrap();
-    let position = PositionRepository::new(pool).create(&dept.id, "Cargo 1", 1, 1, None).await.unwrap();
-    
+    let company = CompanyRepository::new(pool)
+        .create("rollback-install", "Empresa Teste")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT-001", "Teste", None)
+        .await
+        .unwrap();
+    let position = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 1", 1, 1, None)
+        .await
+        .unwrap();
+
     let emp1 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("rollback-install", "rollback-owner", &position.id, "Funcionário 1", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "rollback-install",
+            "rollback-owner",
+            &position.id,
+            "Funcionário 1",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Tentar auto-supervisão (deverá falhar)
-    let result = app.owner_update_employee_supervisor(&emp1.id, Some(&emp1.id)).await;
+    let result = app
+        .owner_update_employee_supervisor(&emp1.id, Some(&emp1.id))
+        .await;
     assert!(result.is_err(), "Auto-supervisão deve falhar");
 
     // Verificar que NENHUM contexto residual permanece
-    let context_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    assert_eq!(context_count, 0, "Nenhum contexto residual deve permanecer após rollback");
+    let context_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        context_count, 0,
+        "Nenhum contexto residual deve permanecer após rollback"
+    );
 
     // Verificar que o evento de tentativa falhada NÃO foi criado
     let denied_count: i64 = sqlx::query_scalar(
@@ -692,7 +772,10 @@ async fn supervisor_change_single_transaction_rollback_on_error() {
     .fetch_one(pool)
     .await
     .unwrap();
-    assert_eq!(denied_count, 0, "Evento de atualização negada não deve existir");
+    assert_eq!(
+        denied_count, 0,
+        "Evento de atualização negada não deve existir"
+    );
 
     drop(app);
     let _ = std::fs::remove_file(file);
@@ -701,7 +784,10 @@ async fn supervisor_change_single_transaction_rollback_on_error() {
 #[tokio::test]
 async fn supervisor_change_rejects_invalid_owner_context() {
     // Teste: alteração rejeitada quando owner_uuid não corresponde à instalação
-    let file = std::env::temp_dir().join(format!("tina-audit-invalid-owner-{}.db", uuid::Uuid::new_v4()));
+    let file = std::env::temp_dir().join(format!(
+        "tina-audit-invalid-owner-{}.db",
+        uuid::Uuid::new_v4()
+    ));
     let app = crate::TinaApp::initialize_at(&file, "invalid-install", "valid-owner")
         .await
         .unwrap();
@@ -710,13 +796,30 @@ async fn supervisor_change_rejects_invalid_owner_context() {
     let pool = app.database().pool();
 
     // Criar estrutura organizacional
-    let company = CompanyRepository::new(pool).create("invalid-install", "Empresa").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT", "Teste", None).await.unwrap();
-    let position = PositionRepository::new(pool).create(&dept.id, "Cargo 1", 1, 1, None).await.unwrap();
-    
+    let company = CompanyRepository::new(pool)
+        .create("invalid-install", "Empresa")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT", "Teste", None)
+        .await
+        .unwrap();
+    let position = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 1", 1, 1, None)
+        .await
+        .unwrap();
+
     let emp = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("invalid-install", "valid-owner", &position.id, "Funcionário", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "invalid-install",
+            "valid-owner",
+            &position.id,
+            "Funcionário",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Tentar alterar supervisor com owner_uuid inválido via direct repository call
     let result = crate::infra::HierarchyService::new(pool)
@@ -729,18 +832,23 @@ async fn supervisor_change_rejects_invalid_owner_context() {
             None,
         )
         .await;
-    
+
     assert!(result.is_err(), "Deve rejeitar owner_uuid inválido");
-    assert!(matches!(result.unwrap_err(), crate::error::TinaError::Unauthorized(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::error::TinaError::Unauthorized(_)
+    ));
 
     // Verificar ausência de contexto residual
-    let context_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    assert_eq!(context_count, 0, "Nenhum contexto deve permanecer após falha");
+    let context_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        context_count, 0,
+        "Nenhum contexto deve permanecer após falha"
+    );
 
     drop(app);
     let _ = std::fs::remove_file(file);
@@ -750,7 +858,10 @@ async fn supervisor_change_rejects_invalid_owner_context() {
 async fn failed_write_operations_are_auditied() {
     // Teste: operações de escrita que falham devem registrar auditoria denied
     // Este teste verifica que operações rejeitadas pela autorização são auditadas
-    let file = std::env::temp_dir().join(format!("tina-audit-write-denied-{}.db", uuid::Uuid::new_v4()));
+    let file = std::env::temp_dir().join(format!(
+        "tina-audit-write-denied-{}.db",
+        uuid::Uuid::new_v4()
+    ));
     let app = crate::TinaApp::initialize_at(&file, "write-denied-install", "write-denied-owner")
         .await
         .unwrap();
@@ -759,7 +870,10 @@ async fn failed_write_operations_are_auditied() {
 
     // Tentar criar empresa deve falhar por falta de sessão
     let result = app.owner_create_company("Empresa Teste").await;
-    assert!(result.is_err(), "Criação de empresa deve falhar com sessão bloqueada");
+    assert!(
+        result.is_err(),
+        "Criação de empresa deve falhar com sessão bloqueada"
+    );
 
     // Verificar se foi registrado como denied (via record_denied_owner_audit_read no require_owner)
     // Nota: atualmente os métodos de escrita não registram denied automaticamente,
@@ -786,39 +900,83 @@ async fn supervisor_change_atomicity_with_failed_supervision_cycle() {
     let pool = app.database().pool();
 
     // Criar empresa, departamento, 3 cargos
-    let company = CompanyRepository::new(pool).create("cycle-install", "Empresa").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT", "Teste", None).await.unwrap();
-    
-    let pos1 = PositionRepository::new(pool).create(&dept.id, "Cargo 1", 1, 1, None).await.unwrap();
-    let pos2 = PositionRepository::new(pool).create(&dept.id, "Cargo 2", 2, 2, None).await.unwrap();
-    let pos3 = PositionRepository::new(pool).create(&dept.id, "Cargo 3", 3, 3, None).await.unwrap();
-    
+    let company = CompanyRepository::new(pool)
+        .create("cycle-install", "Empresa")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT", "Teste", None)
+        .await
+        .unwrap();
+
+    let pos1 = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 1", 1, 1, None)
+        .await
+        .unwrap();
+    let pos2 = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 2", 2, 2, None)
+        .await
+        .unwrap();
+    let pos3 = PositionRepository::new(pool)
+        .create(&dept.id, "Cargo 3", 3, 3, None)
+        .await
+        .unwrap();
+
     // Criar 3 funcionários sem supervisores
     let emp1 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("cycle-install", "cycle-owner", &pos1.id, "Emp 1", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "cycle-install",
+            "cycle-owner",
+            &pos1.id,
+            "Emp 1",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
     let emp2 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("cycle-install", "cycle-owner", &pos2.id, "Emp 2", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "cycle-install",
+            "cycle-owner",
+            &pos2.id,
+            "Emp 2",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
     let emp3 = crate::infra::EmployeeRepository::new(pool)
-        .create_as_owner("cycle-install", "cycle-owner", &pos3.id, "Emp 3", None, None)
-        .await.unwrap();
+        .create_as_owner(
+            "cycle-install",
+            "cycle-owner",
+            &pos3.id,
+            "Emp 3",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Tentar criar ciclo: emp1 -> emp2 -> emp3 -> emp1
-    app.owner_update_employee_supervisor(&emp1.id, Some(&emp2.id)).await.unwrap();
-    app.owner_update_employee_supervisor(&emp2.id, Some(&emp3.id)).await.unwrap();
-    
+    app.owner_update_employee_supervisor(&emp1.id, Some(&emp2.id))
+        .await
+        .unwrap();
+    app.owner_update_employee_supervisor(&emp2.id, Some(&emp3.id))
+        .await
+        .unwrap();
+
     // Este deve falhar por ciclo
-    let result = app.owner_update_employee_supervisor(&emp3.id, Some(&emp1.id)).await;
+    let result = app
+        .owner_update_employee_supervisor(&emp3.id, Some(&emp1.id))
+        .await;
     assert!(result.is_err(), "Ciclo de supervisão deve ser rejeitado");
 
     // Verificar que NENHUM contexto residual permanece
-    let context_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let context_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(context_count, 0, "Nenhum contexto residual deve permanecer");
 
     drop(app);
@@ -830,10 +988,14 @@ async fn installation_isolation_preserved_in_audit_events() {
     // Teste: eventos de uma instalação não aparecem em outra
     let file1 = std::env::temp_dir().join(format!("tina-isolation-1-{}.db", uuid::Uuid::new_v4()));
     let file2 = std::env::temp_dir().join(format!("tina-isolation-2-{}.db", uuid::Uuid::new_v4()));
-    
-    let app1 = crate::TinaApp::initialize_at(&file1, "install-1", "owner-1").await.unwrap();
-    let app2 = crate::TinaApp::initialize_at(&file2, "install-2", "owner-2").await.unwrap();
-    
+
+    let app1 = crate::TinaApp::initialize_at(&file1, "install-1", "owner-1")
+        .await
+        .unwrap();
+    let app2 = crate::TinaApp::initialize_at(&file2, "install-2", "owner-2")
+        .await
+        .unwrap();
+
     app1.unlock_owner_for_test().unwrap();
     app2.unlock_owner_for_test().unwrap();
 
@@ -841,12 +1003,24 @@ async fn installation_isolation_preserved_in_audit_events() {
     let pool2 = app2.database().pool();
 
     // Criar empresa em cada instalação
-    let company1 = CompanyRepository::new(pool1).create("install-1", "Empresa 1").await.unwrap();
-    let company2 = CompanyRepository::new(pool2).create("install-2", "Empresa 2").await.unwrap();
+    let company1 = CompanyRepository::new(pool1)
+        .create("install-1", "Empresa 1")
+        .await
+        .unwrap();
+    let company2 = CompanyRepository::new(pool2)
+        .create("install-2", "Empresa 2")
+        .await
+        .unwrap();
 
     // Atualizar nome das empresas
-    CompanyRepository::new(pool1).update_name_as_owner(&company1.id, "install-1", "owner-1", "Empresa 1 Atualizada").await.unwrap();
-    CompanyRepository::new(pool2).update_name_as_owner(&company2.id, "install-2", "owner-2", "Empresa 2 Atualizada").await.unwrap();
+    CompanyRepository::new(pool1)
+        .update_name_as_owner(&company1.id, "install-1", "owner-1", "Empresa 1 Atualizada")
+        .await
+        .unwrap();
+    CompanyRepository::new(pool2)
+        .update_name_as_owner(&company2.id, "install-2", "owner-2", "Empresa 2 Atualizada")
+        .await
+        .unwrap();
 
     // Verificar isolamento de eventos
     let events1: Vec<(String, String)> = sqlx::query_as(
@@ -867,30 +1041,40 @@ async fn installation_isolation_preserved_in_audit_events() {
 
     // install-1 só deve ter eventos de company1
     for (entity_type, cid) in &events1 {
-        assert_eq!(entity_type, "company", "install-1 deve ter apenas eventos de company");
-        assert_eq!(cid, &company1.id, "install-1 deve ter apenas eventos de company1");
+        assert_eq!(
+            entity_type, "company",
+            "install-1 deve ter apenas eventos de company"
+        );
+        assert_eq!(
+            cid, &company1.id,
+            "install-1 deve ter apenas eventos de company1"
+        );
     }
 
     // install-2 só deve ter eventos de company2
     for (entity_type, cid) in &events2 {
-        assert_eq!(entity_type, "company", "install-2 deve ter apenas eventos de company");
-        assert_eq!(cid, &company2.id, "install-2 deve ter apenas eventos de company2");
+        assert_eq!(
+            entity_type, "company",
+            "install-2 deve ter apenas eventos de company"
+        );
+        assert_eq!(
+            cid, &company2.id,
+            "install-2 deve ter apenas eventos de company2"
+        );
     }
 
     // Verificar que os contextos são limpos
-    let contexts1: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool1)
-    .await
-    .unwrap();
-    
-    let contexts2: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool2)
-    .await
-    .unwrap();
+    let contexts1: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool1)
+            .await
+            .unwrap();
+
+    let contexts2: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool2)
+            .await
+            .unwrap();
 
     assert_eq!(contexts1, 0, "Nenhum contexto residual em install-1");
     assert_eq!(contexts2, 0, "Nenhum contexto residual em install-2");
@@ -913,46 +1097,51 @@ async fn department_update_description_creates_audit_event() {
     let pool = app.database().pool();
 
     // Criar empresa, departamento
-    let company = CompanyRepository::new(pool).create("desc-install", "Empresa").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT-001", "Teste", Some("Descrição inicial")).await.unwrap();
+    let company = CompanyRepository::new(pool)
+        .create("desc-install", "Empresa")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT-001", "Teste", Some("Descrição inicial"))
+        .await
+        .unwrap();
 
     // Verificar descrição inicial
-    let initial_desc: Option<String> = sqlx::query_scalar(
-        "SELECT description FROM departments WHERE id = ?",
-    )
-    .bind(&dept.id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let initial_desc: Option<String> =
+        sqlx::query_scalar("SELECT description FROM departments WHERE id = ?")
+            .bind(&dept.id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(initial_desc, Some("Descrição inicial".to_string()));
 
     // Atualizar nome e descrição usando o método atômico
-    DepartmentRepository::new(pool).update_details_as_owner(
-        &dept.id,
-        "desc-install",
-        "desc-owner",
-        "Teste Atualizado",
-        Some("Nova descrição"),
-    ).await.unwrap();
+    DepartmentRepository::new(pool)
+        .update_details_as_owner(
+            &dept.id,
+            "desc-install",
+            "desc-owner",
+            "Teste Atualizado",
+            Some("Nova descrição"),
+        )
+        .await
+        .unwrap();
 
     // Verificar que a descrição foi atualizada
-    let updated_desc: Option<String> = sqlx::query_scalar(
-        "SELECT description FROM departments WHERE id = ?",
-    )
-    .bind(&dept.id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let updated_desc: Option<String> =
+        sqlx::query_scalar("SELECT description FROM departments WHERE id = ?")
+            .bind(&dept.id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(updated_desc, Some("Nova descrição".to_string()));
 
     // Verificar que o nome foi atualizado
-    let updated_name: String = sqlx::query_scalar(
-        "SELECT name FROM departments WHERE id = ?",
-    )
-    .bind(&dept.id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let updated_name: String = sqlx::query_scalar("SELECT name FROM departments WHERE id = ?")
+        .bind(&dept.id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
     assert_eq!(updated_name, "Teste Atualizado");
 
     // Verificar auditoria
@@ -962,15 +1151,17 @@ async fn department_update_description_creates_audit_event() {
     .fetch_one(pool)
     .await
     .unwrap();
-    assert!(event_count >= 1, "Deve ter pelo menos 1 evento de atualização de department");
+    assert!(
+        event_count >= 1,
+        "Deve ter pelo menos 1 evento de atualização de department"
+    );
 
     // Verificar ausência de contexto residual
-    let context_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let context_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(context_count, 0, "Nenhum contexto residual deve permanecer");
 
     drop(app);
@@ -989,27 +1180,35 @@ async fn department_update_details_rejects_unauthorized() {
     let pool = app.database().pool();
 
     // Criar empresa, departamento
-    let company = CompanyRepository::new(pool).create("unauth-install", "Empresa").await.unwrap();
-    let dept = DepartmentRepository::new(pool).create(&company.id, "DEPT-001", "Teste", None).await.unwrap();
+    let company = CompanyRepository::new(pool)
+        .create("unauth-install", "Empresa")
+        .await
+        .unwrap();
+    let dept = DepartmentRepository::new(pool)
+        .create(&company.id, "DEPT-001", "Teste", None)
+        .await
+        .unwrap();
 
     // Criar outra instalação com outro owner
-    let file2 = std::env::temp_dir().join(format!("tina-dept-unauth-2-{}.db", uuid::Uuid::new_v4()));
+    let file2 =
+        std::env::temp_dir().join(format!("tina-dept-unauth-2-{}.db", uuid::Uuid::new_v4()));
     let app2 = crate::TinaApp::initialize_at(&file2, "unauth-install", "owner-2")
         .await
         .unwrap();
     let _ = app2.lock_owner(); // Bloqueia o owner-2
 
     // Tentar atualizar department como owner-2 (sem unlock)
-    let result = app2.owner_update_department_details(&dept.id, "Novo Nome", Some("Nova desc")).await;
+    let result = app2
+        .owner_update_department_details(&dept.id, "Novo Nome", Some("Nova desc"))
+        .await;
     assert!(result.is_err(), "Deve rejeitar atualização não autorizada");
 
     // Verificar ausência de contexto residual
-    let context_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM organizational_audit_actor_context"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let context_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM organizational_audit_actor_context")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(context_count, 0, "Nenhum contexto residual após falha");
 
     drop(app);

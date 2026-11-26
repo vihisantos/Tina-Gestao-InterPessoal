@@ -150,7 +150,11 @@ pub async fn update_department(
     request: UpdateDepartmentRequest,
 ) -> Result<(), String> {
     state
-        .owner_update_department_details(&department_id, &request.name, request.description.as_deref())
+        .owner_update_department_details(
+            &department_id,
+            &request.name,
+            request.description.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -161,5 +165,8 @@ pub async fn archive_department(
     state: State<'_, TinaApp>,
     department_id: String,
 ) -> Result<(), String> {
-    state.owner_archive_department(&department_id).await.map_err(|e| e.to_string())
+    state
+        .owner_archive_department(&department_id)
+        .await
+        .map_err(|e| e.to_string())
 }

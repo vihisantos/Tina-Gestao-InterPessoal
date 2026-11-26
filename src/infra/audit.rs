@@ -112,6 +112,40 @@ pub(crate) async fn record_denied_owner_audit_read(
     Ok(())
 }
 
+/// Registra uma tentativa de escrita negada separadamente da transação de negócio.
+/// Usado quando `record_denied_owner_audit_read` não é adequado porque a operação é de escrita.
+pub(crate) async fn record_denied_owner_audit_write(
+    pool: &SqlitePool,
+    installation_id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    action: &str,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO organizational_audit_events
+         (id, installation_id, entity_type, entity_id, action, outcome)
+         VALUES (?, ?, ?, ?, ?, 'denied')",
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(installation_id)
+    .bind(entity_type)
+    .bind(entity_id)
+    .bind(action)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Registra tentativa de escrita negada para o owner_change_employee_position.
+/// Usado quando a sessão está bloqueada.
+pub(crate) async fn record_denied_position_change(
+    pool: &SqlitePool,
+    installation_id: &str,
+    employee_id: &str,
+) -> Result<()> {
+    record_denied_owner_audit_write(pool, installation_id, "employee", employee_id, "position_change").await
+}
+
 /// Inicia transação de escrita com autoria obtida do contexto autenticado.
 pub(crate) async fn begin_owner_write<'a>(
     pool: &'a SqlitePool,
@@ -140,10 +174,11 @@ pub(crate) async fn commit_owner_write(
     mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
     installation_id: &str,
 ) -> Result<()> {
-    let removed = sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
-        .bind(installation_id)
-        .execute(&mut *tx)
-        .await?;
+    let removed =
+        sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
+            .bind(installation_id)
+            .execute(&mut *tx)
+            .await?;
     if removed.rows_affected() != 1 {
         return Err(crate::error::TinaError::Other(
             "contexto de auditoria ausente".into(),

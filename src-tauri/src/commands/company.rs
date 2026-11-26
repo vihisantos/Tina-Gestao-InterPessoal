@@ -116,5 +116,8 @@ pub async fn update_company(
 /// Archiva uma empresa (não pode ter departamentos ativos) - com auditoria de autoria transacional
 #[tauri::command]
 pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> Result<(), String> {
-    state.owner_archive_company(&company_id).await.map_err(|e| e.to_string())
+    state
+        .owner_archive_company(&company_id)
+        .await
+        .map_err(|e| e.to_string())
 }

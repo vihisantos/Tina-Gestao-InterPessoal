@@ -173,7 +173,7 @@ pub async fn update_position(
         .owner_update_position_name(&position_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     state
         .owner_update_position_description(&position_id, request.description.as_deref())
         .await
@@ -188,5 +188,8 @@ pub async fn archive_position(
     state: State<'_, TinaApp>,
     position_id: String,
 ) -> Result<(), String> {
-    state.owner_archive_position(&position_id).await.map_err(|e| e.to_string())
+    state
+        .owner_archive_position(&position_id)
+        .await
+        .map_err(|e| e.to_string())
 }

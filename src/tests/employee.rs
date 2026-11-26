@@ -1271,7 +1271,10 @@ async fn employee_directory_is_scoped_and_includes_inactive() {
     assert_eq!(rows[0].department_id, department);
     assert_eq!(rows[0].position_id, position);
     assert!(!rows[0].active);
-    assert_eq!(rows[0].responsibilities.as_deref(), Some("Responsabilidade"));
+    assert_eq!(
+        rows[0].responsibilities.as_deref(),
+        Some("Responsabilidade")
+    );
     db.pool().close().await;
     cleanup_test_db(&path);
 }

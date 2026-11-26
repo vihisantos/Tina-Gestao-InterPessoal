@@ -810,3 +810,37 @@ async fn test_find_by_owner_uuid() {
 
     cleanup_test_db(&path);
 }
+
+#[tokio::test]
+async fn personal_organization_is_explicit_unique_and_preserves_company_hierarchy() {
+    let path = std::env::temp_dir().join(format!("tina-personal-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&path, "personal-installation", "personal-owner")
+        .await
+        .unwrap();
+    app.unlock_owner_for_test().unwrap();
+    let personal = app
+        .owner_create_company_with_kind("Pessoal", "personal")
+        .await
+        .unwrap();
+    let business = app.owner_create_company("Negócio").await.unwrap();
+    assert_eq!(personal.kind, "personal");
+    assert_eq!(business.kind, "business");
+    assert!(app
+        .owner_create_company_with_kind("Outra pessoal", "personal")
+        .await
+        .is_err());
+    assert!(app
+        .owner_create_company_with_kind("Inválida", "unknown")
+        .await
+        .is_err());
+    let dept = app
+        .owner_create_department(&personal.id, "FIN", "Finanças pessoais", None)
+        .await
+        .unwrap();
+    assert_eq!(dept.company_id, personal.id);
+    let db = app.database();
+    let reloaded = db.companies().find_by_id(&personal.id).await.unwrap();
+    assert_eq!(reloaded.kind, "personal");
+    db.pool().close().await;
+    let _ = std::fs::remove_file(path);
+}

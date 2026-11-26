@@ -604,6 +604,23 @@ impl TinaApp {
             .await
     }
 
+    /// Cria uma organização com contexto explícito, sem alterar a hierarquia existente.
+    pub async fn owner_create_company_with_kind(
+        &self,
+        name: &str,
+        kind: &str,
+    ) -> Result<crate::core::Company> {
+        self.require_owner(Operation::Write)?;
+        infra::CompanyRepository::new(self.database.pool())
+            .create_as_owner_with_kind(
+                &self.config.installation_id,
+                &self.config.owner_uuid,
+                name,
+                kind,
+            )
+            .await
+    }
+
     /// Atualiza nome da empresa com verificação de autoria transacional
     pub async fn owner_update_company_name(&self, company_id: &str, new_name: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;

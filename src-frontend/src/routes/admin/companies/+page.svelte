@@ -9,6 +9,7 @@
         id: string;
         installation_id: string;
         name: string;
+        kind: 'business' | 'personal';
         status: string;
         created_at: string;
     }
@@ -18,6 +19,7 @@
     const isCreating = writable(false);
     const error = writable<string | null>(null);
     let newCompanyName = '';
+    let newCompanyKind: 'business' | 'personal' = 'business';
 
     async function loadCompanies() {
         isLoading.set(true);
@@ -40,8 +42,9 @@
         error.set(null);
         try {
             // O handler Rust recebe CreateCompanyRequest no argumento "request".
-            await invoke<CompanyDto>('create_company', { request: { name } });
+            await invoke<CompanyDto>('create_company', { request: { name, kind: newCompanyKind } });
             newCompanyName = '';
+            newCompanyKind = 'business';
             await loadCompanies();
         } catch (e) {
             error.set(e instanceof Error ? e.message : String(e));
@@ -73,6 +76,11 @@
     <form class="create-form" onsubmit={createCompany}>
         <label for="company-name">Nome da empresa</label>
         <input id="company-name" name="company-name" bind:value={newCompanyName} maxlength="160" required />
+        <label for="company-kind">Contexto da organização</label>
+        <select id="company-kind" bind:value={newCompanyKind}>
+            <option value="business">Empresarial</option>
+            <option value="personal">Pessoal</option>
+        </select>
         <button type="submit" disabled={$isCreating || !newCompanyName.trim()}>
             {$isCreating ? 'Cadastrando...' : 'Cadastrar empresa'}
         </button>
@@ -95,6 +103,7 @@
                 <li class="company-item">
                     <div class="company-info">
                         <h3>{company.name}</h3>
+                        <p class="meta">{company.kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
                         <p class="meta">ID: {company.id.substring(0, 8)}...</p>
                         <p class="meta">Criada: {new Date(company.created_at).toLocaleDateString('pt-BR')}</p>
                     </div>

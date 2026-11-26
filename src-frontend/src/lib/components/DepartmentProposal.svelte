@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import Card from './Card.svelte';
   type Message = { id: string; role: string; content: string; created_at: string };
-  type Proposal = { id: string; company_name: string; organization_kind: string; name: string; code: string; description?: string | null };
+  type Proposal = { id: string; tool_name: string; reason?: string | null; company_name: string; organization_kind: string; name: string; code: string; description?: string | null };
   let { sessionId, lastMessageId, ondecision }: { sessionId: string; lastMessageId: string; ondecision: (message: Message) => void } = $props();
   let proposal = $state<Proposal | null>(null);
   let busy = $state(false);
@@ -34,9 +34,10 @@
   }
 </script>
 {#if proposal}
-  <Card title="Autorizar criação de departamento">
-    <p><strong>{proposal.name}</strong> ({proposal.code})</p>
-    <p>Organização: {proposal.company_name} — {proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
+  <Card title={proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : 'Posso criar este departamento?'}>
+    <p><strong>{proposal.name}</strong>{#if proposal.code} ({proposal.code}){/if}</p>
+    <p>{proposal.tool_name === 'create_department' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
+    {#if proposal.reason}<p><strong>Por que a Tina sugere:</strong> {proposal.reason}</p>{/if}
     {#if proposal.description}<p>{proposal.description}</p>{/if}
     <p>A criação será registrada no banco somente após sua autorização.</p>
     <div class="actions">

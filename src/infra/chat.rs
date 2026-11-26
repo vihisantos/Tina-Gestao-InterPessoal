@@ -642,7 +642,7 @@ pub(crate) async fn stream_nvidia_turn(
         "stream": true
     });
     if enable_tools {
-        payload["tools"] = serde_json::json!([super::chat_tools::definition()]);
+        payload["tools"] = super::chat_tools::definitions();
         payload["tool_choice"] = serde_json::json!("auto");
     }
     let request = client.post(endpoint).bearer_auth(key).json(&payload);

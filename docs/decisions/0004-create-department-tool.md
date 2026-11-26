@@ -21,3 +21,7 @@ A primeira etapa não ativa ferramentas no chat. O cadastro e a semântica pesso
 ## Integração do chat
 
 A rodada NVIDIA anuncia somente `create_department`. Uma proposta persistida requer confirmação local explícita; a decisão, o departamento e a mensagem de resultado são transacionais e idempotentes. A organização precisa existir e pode ser cadastrada na aba Organizações. Não há criação implícita de empresa. A compatibilidade real do modelo NVIDIA e a validação Windows permanecem pendentes.
+
+## Iniciativa da Tina (decisão posterior do proprietário)
+
+A Tina pode identificar necessidades durante uma conversa e propor organizações ou departamentos, sem comando explícito. Cada proposta explica sua motivação; a autorização da escrita continua sendo do proprietário. O backend evita duplicar estruturas por nome e tipo pessoal e revalida a existência ao confirmar. A criação de organização não cria departamentos automaticamente. A iniciativa nesta fase acontece no chat ativo, não em execução autônoma em segundo plano.

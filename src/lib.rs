@@ -586,7 +586,7 @@ impl TinaApp {
         }
     }
 
-    /// Consulta a proposta atual de criação de departamento, sem executar a ação.
+    /// Consulta a proposta ativa da sessão, independente da última mensagem.
     pub async fn owner_pending_department(
         &self,
         session_id: &str,
@@ -620,6 +620,28 @@ impl TinaApp {
             session_id,
             proposal_id,
             approved,
+        )
+        .await
+    }
+
+    /// Cancela uma proposta ativa sem criar nada; idempotente para o mesmo id.
+    pub async fn owner_cancel_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+    ) -> Result<infra::chat::ChatMessage> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("há uma geração ativa".into()))?;
+        self.require_owner(Operation::Write)?;
+        infra::chat_tools::cancel(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            proposal_id,
         )
         .await
     }

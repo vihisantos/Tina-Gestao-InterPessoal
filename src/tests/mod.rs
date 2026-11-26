@@ -5,6 +5,7 @@ mod audit;
 mod chat;
 mod employee;
 mod hierarchy;
+mod legacy_upgrade;
 mod organizational;
 mod owner_auth;
 

@@ -330,6 +330,17 @@ async fn chat_decide_department(
 }
 
 #[tauri::command]
+async fn chat_cancel_proposal(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    proposal_id: String,
+) -> Result<tina::infra::chat::ChatMessage, String> {
+    app.owner_cancel_proposal(&session_id, &proposal_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_cancel(
     app: State<'_, TinaApp>,
     run: State<'_, ChatRun>,
@@ -389,6 +400,7 @@ fn main() {
             chat_generate,
             chat_pending_department,
             chat_decide_department,
+            chat_cancel_proposal,
             chat_cancel,
             chat_limits,
             chat_open_link,

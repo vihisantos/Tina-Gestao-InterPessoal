@@ -18,10 +18,34 @@ A Tina deve diferenciar esses contextos, resolver a organização pela identidad
 
 A primeira etapa não ativa ferramentas no chat. O cadastro e a semântica pessoal são a base para a integração posterior nesta mesma PR.
 
-## Integração do chat
+## Ferramentas e comandos implementados
 
-A rodada NVIDIA anuncia somente `create_department`. Uma proposta persistida requer confirmação local explícita; a decisão, o departamento e a mensagem de resultado são transacionais e idempotentes. A organização precisa existir e pode ser cadastrada na aba Organizações. Não há criação implícita de empresa. A compatibilidade real do modelo NVIDIA e a validação Windows permanecem pendentes.
+- `create_department` (function calling NVIDIA): propõe um departamento com `organization_kind`, `company_name` opcional, `name`, `code`, `description` e `reason`. Não grava nada durante a inferência.
+- `create_organization` (function calling NVIDIA): propõe uma organização `personal` ou `business` com `reason`. Não cria departamentos automaticamente.
+- `owner_pending_department`: consulta a proposta ativa da sessão, sem efeito de escrita.
+- `owner_decide_department`: confirma ou recusa a proposta; grava entidade, auditoria e mensagem de resultado na mesma transação do proprietário.
+- `owner_cancel_proposal` e o comando Tauri `chat_cancel_proposal`: cancelam a proposta sem criar nada.
+- `repair_migration_checksums`: ferramenta explícita, fora da inicialização, para divergência comprovadamente apenas `LF`/`CRLF`, com backup e confirmação.
 
-## Iniciativa da Tina (decisão posterior do proprietário)
+A resolução da organização usa `kind`, nunca o nome: um cadastro comercial chamado “Pessoal” não é a organização pessoal. O código rejeita argumentos desconhecidos, campos forjados de autoridade, nomes/códigos inválidos, duplicatas e alvos ambíguos, e limita tudo à `installation_id` autenticada.
 
-A Tina pode identificar necessidades durante uma conversa e propor organizações ou departamentos, sem comando explícito. Cada proposta explica sua motivação; a autorização da escrita continua sendo do proprietário. O backend evita duplicar estruturas por nome e tipo pessoal e revalida a existência ao confirmar. A criação de organização não cria departamentos automaticamente. A iniciativa nesta fase acontece no chat ativo, não em execução autônoma em segundo plano.
+## Ciclo de vida das propostas
+
+`lifecycle_status` é a fonte autoritativa (`pending`, `approved`, `rejected`, `superseded`, `cancelled`); `status` permanece legado para leitores antigos. Mensagens posteriores não escondem a proposta pendente. Uma nova proposta substitui a anterior na mesma sessão e instalação, marcando-a como `superseded` com `superseded_by`; aprovação ou recusa da proposta substituída falha. Decisão repetida com o mesmo resultado devolve a mesma mensagem persistida; decisão oposta, cancelamento de proposta decidida e aprovação de proposta cancelada falham sem gravar. Cancelamento repetido é idempotente e gera auditoria uma única vez.
+
+O cartão do chat mostra a justificativa e oferece Confirmar, Recusar e Cancelar. Ele recarrega quando a conversa avança, sem apagar a proposta, e descarta respostas antigas quando a sessão muda.
+
+## Migrations desta branch
+
+| Versão | Arquivo | Finalidade |
+|---:|---|---|
+| 13 | `013_company_kind.sql` | tipo explícito `personal`/`business`, no máximo uma organização pessoal por instalação. |
+| 14 | `014_chat_department_proposals.sql` | propostas de departamento persistidas por sessão. |
+| 15 | `015_proactive_organization_proposals.sql` | propostas de organização por iniciativa da Tina. |
+| 19 | `019_proposal_lifecycle.sql` | estados explícitos, substituição segura, cancelamento e índices de uma proposta ativa por sessão. |
+
+As versões 16 a 18 ficam reservadas para a PR empilhada de RH e não são desta branch. As migrations publicadas não foram editadas; toda mudança de schema é aditiva e forward-only. O upgrade de bancos legados é validado a partir das próprias SQLs incorporadas, preservando dados e falhando em divergência real, versão futura ou migration marcada como falha. Nunca há reparo automático na inicialização.
+
+## Validação e pendências
+
+Foram executados `cargo fmt --all -- --check`, `cargo check --all-targets`, `cargo test`, `npm run frontend:check`, `npm run frontend:test`, `npm run frontend:build` e `cargo build -p tina-desktop` no Windows. A compatibilidade com o modelo NVIDIA real e a validação manual do proprietário na janela Tauri continuam pendentes antes de qualquer merge.

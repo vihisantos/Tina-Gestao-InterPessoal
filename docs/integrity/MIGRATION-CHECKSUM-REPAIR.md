@@ -13,9 +13,12 @@ e o diagnóstico mostrar que a diferença é **exclusivamente** de quebra de lin
 checksum com `SHA-384` sobre os bytes exatos do SQL; por isso o mesmo arquivo
 com `CRLF` e com `LF` produz hashes diferentes.
 
-O banco ativo da instalação atual (`%APPDATA%\tina\tina.db`) está consistente
-com os arquivos embutidos no executável e **não precisa ser reparado**. Não
-execute a ferramenta “por precaução”.
+O banco ativo da instalação atual (`%APPDATA%\tina\tina.db`) foi reparado
+anteriormente, com autorização explícita, para as versões `[1, 7, 8, 9, 10, 11]`.
+Ele **não precisa de novo reparo de checksum nesta etapa** e não foi alterado.
+Ao distribuir esta branch, ele precisará receber as migrations 12 a 15 e 19
+pela inicialização normal; faça backup antes. Não execute a ferramenta “por
+precaução”.
 
 ## O que a inicialização faz
 
@@ -118,6 +121,38 @@ Migrations embutidas na versão final:
 | 9 | `009_organizational_audit_events.sql` |
 | 10 | `010_chat_sessions.sql` |
 | 11 | `011_audit_owner_context.sql` |
+| 12 | `012_audit_extended_owner_context.sql` |
+| 13 | `013_company_kind.sql` |
+| 14 | `014_chat_department_proposals.sql` |
+| 15 | `015_proactive_organization_proposals.sql` |
+| 19 | `019_proposal_lifecycle.sql` |
+
+As versões 16, 17 e 18 pertencem à PR #74 empilhada (`016_chat_position_proposals.sql`,
+`017_tool_app_grants.sql` e `018_chat_contract_drafts.sql`) e **não** fazem parte
+desta branch. A numeração 19 foi escolhida para não colidir com essa reserva.
+Nenhuma migration já publicada foi editada: 013 a 015 e 019 são aditivas e
+forward-only. A migration 019 preserva a coluna legada `status` e torna
+`lifecycle_status` a fonte autoritativa das propostas.
+
+## Cobertura automatizada de upgrade
+
+`src/tests/legacy_upgrade.rs` constrói bancos legados com as próprias SQLs
+incorporadas, limitando o `Migrator` até a versão desejada. Os testes cobrem:
+
+- upgrade de v1 preservando `employees.status`, `is_active`, tabelas de
+  histórico e integridade do banco;
+- upgrade de v12 com backfill de `companies.kind` e unicidade de organização
+  pessoal por instalação;
+- upgrade de v15 preservando apenas a proposta pendente mais recente como ativa
+  e marcando a anterior como `superseded`;
+- divergência apenas LF/CRLF: startup falha sem tocar no banco; a ferramenta
+  explícita cria backup verificado e repara somente o checksum;
+- divergência real de SQL: nem a inicialização nem a ferramenta explícita
+  reparam, e os dados permanecem intactos;
+- versão futura no journal e migration com `success = 0`: falha fechada, sem
+  backup e sem alteração.
+
+Nenhum teste apaga `tina.db`, WAL/SHM, TOML ou credenciais reais.
 
 ## Verificação rápida
 
@@ -125,5 +160,8 @@ Migrations embutidas na versão final:
 python -c "import os,sqlite3; p=os.path.join(os.environ['APPDATA'],'tina','tina.db'); c=sqlite3.connect('file:'+p.replace('\\\\','/')+'?mode=ro',uri=True); print(c.execute('PRAGMA integrity_check').fetchone()[0]); print(c.execute('SELECT version FROM _sqlx_migrations ORDER BY version').fetchall())"
 ```
 
-Se retornar `ok` e as versões `1..11`, o banco está consistente e não deve ser
-modificado.
+Nesta branch o journal esperado é `1..15` mais `19`. Se retornar `ok` com esse
+conjunto, o banco está consistente e não deve ser modificado. Bancos que ainda
+estão em `1..11` devem ser atualizados pela inicialização normal, com backup;
+um journal em `1..15` sem a versão 19 ainda precisa receber a migration aditiva
+de ciclo de vida. Versões 16 a 18 só aparecem se a PR #74 for integrada.

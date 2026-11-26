@@ -20,8 +20,8 @@ Template de entrada para quando o primeiro componente entrar:
 - Origem: decisão do proprietário; implementação original assistida por IA neste repositório.
 - Licença: proprietária do repositório; revisão humana pendente.
 - Obtenção: código original; nenhuma dependência externa nova.
-- Integridade: arquivos versionados; testes nativos pendentes.
+- Integridade: arquivos versionados; migrations 013, 014, 015 e 019 aditivas, sem edição de SQL publicado; checksums e upgrades legados cobertos por testes no Windows.
 - Por que: R-4 e R-7.2.
-- Incorporado por: branch feat/R-7.2-create-department-tool, sujeita a revisão.
+- Incorporado por: branch feat/R-7.2-create-department-tool, PR #73 em rascunho, sujeita a revisão; nenhum merge realizado.
 
 Entradas futuras vão antes deste parágrafo inicial, em ordem cronológica.

@@ -27,3 +27,5 @@ pub use installation::*;
 pub use position::*;
 pub use redis::*;
 pub use telemetry::*;
+
+mod professional_records;

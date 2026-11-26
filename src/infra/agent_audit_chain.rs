@@ -278,3 +278,37 @@ pub(crate) fn store_audit_anchor(
     )?
     .set_secret(digest)
 }
+
+/// Serializa gravações neste processo. O serviço deve ser o único escritor.
+/// Se o cofre falhar após o commit, a próxima operação falha fechada:
+/// nunca reconstruir automaticamente a âncora a partir de um banco suspeito.
+#[cfg(target_os = "windows")]
+pub(crate) async fn append_anchored(
+    pool: &sqlx::SqlitePool,
+    installation: uuid::Uuid,
+    credential: uuid::Uuid,
+    event: &SignedEvent<'_>,
+) -> Result<(), sqlx::Error> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    let credential_id = credential.to_string();
+    if event.payload.credential_id != credential_id {
+        return Err(sqlx::Error::Protocol("credential mismatch".into()));
+    }
+    let anchor = match load_audit_anchor(installation, credential) {
+        Ok(value) => Some(value),
+        Err(keyring::Error::NoEntry) => None,
+        Err(error) => return Err(sqlx::Error::Protocol(error.to_string())),
+    };
+    if anchor != event.payload.previous_digest
+        || !verify_stored_history(pool, &credential_id, anchor).await?
+    {
+        return Err(sqlx::Error::Protocol("audit anchor mismatch; review required".into()));
+    }
+    append_verified(pool, event).await?;
+    store_audit_anchor(installation, credential, &event.digest)
+        .map_err(|error| sqlx::Error::Protocol(format!(
+            "audit committed but anchor update failed; review required: {error}"
+        )))?;
+    Ok(())
+}

@@ -1,5 +1,6 @@
 //! Infrastructure - database, telemetry, etc.
 
+mod agent_audit_chain;
 mod assignment;
 pub mod audit;
 pub mod chat;

@@ -48,6 +48,7 @@ pub async fn sign_in_owner(state: State<'_, TinaApp>, password: String) -> Resul
 
 /// Bloqueia a sessão sem eliminar a conta ou a chave.
 #[tauri::command]
-pub fn lock_owner(state: State<'_, TinaApp>) -> Result<(), String> {
-    state.lock_owner().map_err(|e| e.to_string())
+pub fn lock_owner(state: State<'_, TinaApp>, run: State<'_, crate::ChatRun>) -> Result<(), String> {
+    state.lock_owner().map_err(|e| e.to_string())?;
+    run.cancel(None)
 }

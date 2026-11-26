@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, Channel } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import Badge from '$lib/components/Badge.svelte';
   import Button from '$lib/components/Button.svelte';
   import Card from '$lib/components/Card.svelte';
+  import ChatHistory from '$lib/components/ChatHistory.svelte';
+  import ChatComposer from '$lib/components/ChatComposer.svelte';
   import Logo from '$lib/components/Logo.svelte';
 
   type BootstrapInfo = {
@@ -28,11 +30,290 @@
   let ownerBusy = $state(false);
   let ownerError = $state<string | null>(null);
 
-  async function refreshOwner() {
+  type ChatSession = { id: string; title: string; created_at: string };
+  type ChatMessage = { id: string; role: string; content: string; created_at: string };
+  type ChatLimits = { maxUserMessageBytes: number };
+  let chats = $state<ChatSession[]>([]);
+  let selected = $state('');
+  let messages = $state<ChatMessage[]>([]);
+  let draft = $state('');
+  let partial = $state('');
+  let chatBusy = $state(false);
+  let chatLoading = $state(false);
+  let renameDraft = $state('');
+  let renaming = $state(false);
+  let chatError = $state('');
+  let apiKey = $state('');
+  let hasKey = $state(false);
+  let chatEpoch = 0;
+  let ownerEpoch = 0;
+  let sessionCheckRunning = false;
+  let generating = $state(false);
+  let cancelling = $state(false);
+  let retryMessageId = $state('');
+  let runId = '';
+  let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
+  let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
+  let chatLimits = $state<ChatLimits>({ maxUserMessageBytes: 4032 });
+  let view = $state<'chat' | 'pessoal'>('chat');
+  let initialGreeting = $derived.by(() => {
+    const name = ownerStatus?.displayName?.trim();
+    return name
+      ? `Olá, ${name}. Eu sou a Tina. Como posso ajudar você hoje?`
+      : 'Olá! Eu sou a Tina. Como posso ajudar você hoje?';
+  });
+
+  async function loadChat() {
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
+    const epoch = ++chatEpoch;
+    chatLoading = true;
     try {
-      ownerStatus = await invoke<OwnerStatus>('owner_status');
-      ownerError = null;
+      const [list, keyAvailable, limits] = await Promise.all([
+        invoke<ChatSession[]>('chat_list'),
+        invoke<boolean>('chat_has_key'),
+        invoke<ChatLimits>('chat_limits')
+      ]);
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      const id = list.find((chat) => chat.id === selected)?.id ?? list[0]?.id ?? '';
+      const history = id ? await invoke<ChatMessage[]>('chat_history', { sessionId: id }) : [];
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      chats = list;
+      hasKey = keyAvailable;
+      chatLimits = limits;
+      selected = id;
+      messages = history;
+      partial = '';
+      retryMessageId = '';
+      chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
+  }
+
+  async function openChat(id: string) {
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked) return;
+    const epoch = ++chatEpoch;
+    chatLoading = true;
+    try {
+      const history = await invoke<ChatMessage[]>('chat_history', { sessionId: id });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      selected = id;
+      messages = history;
+      partial = '';
+      draft = '';
+      retryMessageId = '';
+      renaming = false;
+      renameDraft = '';
+      chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
+  }
+
+  async function renameChat(event: SubmitEvent) {
+    event.preventDefault();
+    if (chatBusy || chatLoading || !selected || !renameDraft.trim() || !ownerStatus?.unlocked) return;
+    const epoch = chatEpoch;
+    const id = selected;
+    chatLoading = true;
+    chatError = '';
+    try {
+      const updated = await invoke<ChatSession>('chat_rename', { sessionId: id, title: renameDraft });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      chats = chats.map((chat) => chat.id === id ? updated : chat);
+      renaming = false;
+      renameDraft = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
+  }
+
+  async function saveKey(event: SubmitEvent) {
+    event.preventDefault();
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked || !apiKey.trim()) return;
+    const epoch = chatEpoch;
+    const key = apiKey;
+    apiKey = '';
+    chatLoading = true;
+    try {
+      await invoke('chat_set_key', { key });
+      if (epoch !== chatEpoch || !ownerStatus?.unlocked) return;
+      hasKey = true;
+      chatError = '';
+    } catch (cause) { if (epoch === chatEpoch) chatError = String(cause); }
+    finally { if (epoch === chatEpoch) chatLoading = false; }
+  }
+
+  async function generateAnswer(sessionId: string, userId: string, epoch: number) {
+    const id = crypto.randomUUID();
+    runId = id;
+    retryMessageId = '';
+    const onDelta = new Channel<string>();
+    onDelta.onmessage = (delta) => {
+      if (epoch === chatEpoch && generating && !cancelling) partial += delta;
+    };
+    try {
+      await invoke('chat_prepare', { runId: id });
+      if (epoch !== chatEpoch) return;
+      generating = true;
+      const answer = await invoke<ChatMessage>('chat_generate', { sessionId, runId: id, onDelta });
+      if (epoch === chatEpoch) {
+        messages = [...messages.filter((m) => m.id !== answer.id), answer];
+        chatError = '';
+      }
     } catch (cause) {
+      if (epoch !== chatEpoch) return;
+      chatError = cancelling ? 'Resposta interrompida.' : String(cause);
+      // Reconcile persisted history before offering retry. IPC failure could
+      // have occurred after a successful write; never append the user again.
+      try {
+        const history = await invoke<ChatMessage[]>('chat_history', { sessionId });
+        if (epoch !== chatEpoch) return;
+        messages = history;
+        const last = history.at(-1);
+        if (last?.id === userId && last.role === 'user') retryMessageId = userId;
+        else if (last?.role === 'assistant') chatError = '';
+      } catch {
+        if (epoch === chatEpoch) chatError += ' Não foi possível confirmar o histórico. Reabra a conversa antes de tentar novamente.';
+      }
+    } finally {
+      await invoke('chat_cancel', { runId: id }).catch(() => {});
+      if (epoch === chatEpoch) { runId = ''; generating = false; cancelling = false; partial = ''; }
+    }
+  }
+
+  async function sendChat() {
+    if (chatBusy || chatLoading || !ownerStatus?.unlocked || !draft.trim() || !hasKey) return;
+    chatBusy = true;
+    chatError = '';
+    retryMessageId = '';
+    partial = '';
+    const epoch = chatEpoch;
+    const content = draft;
+    const maxBytes = chatLimits.maxUserMessageBytes;
+    if (new TextEncoder().encode(content).length > maxBytes) {
+      chatError = `Mensagem extensa demais. Divida o texto em partes de até ${maxBytes.toLocaleString('pt-BR')} bytes.`;
+      chatBusy = false;
+      return;
+    }
+    const attempt = pendingSend ?? {
+      sessionId: selected || crypto.randomUUID(),
+      messageId: crypto.randomUUID(),
+      content,
+      title: Array.from(content.trim()).slice(0, 80).join(''),
+      creating: !selected
+    };
+    if (attempt.content !== content) {
+      chatError = 'Confirme primeiro o envio anterior sem alterar o texto.';
+      chatBusy = false;
+      return;
+    }
+    pendingSend = attempt;
+    try {
+      if (attempt.creating) {
+        const session = await invoke<ChatSession>('chat_create', { title: attempt.title, requestId: attempt.sessionId });
+        if (epoch !== chatEpoch) return;
+        selected = session.id;
+        chats = [session, ...chats.filter((c) => c.id !== session.id)];
+        pendingSend = { ...attempt, creating: false };
+      }
+      const sessionId = attempt.sessionId;
+      const message = await invoke<ChatMessage>('chat_append', { sessionId, content, requestId: attempt.messageId });
+      if (epoch !== chatEpoch) return;
+      messages = [...messages.filter((m) => m.id !== message.id), message];
+      pendingSend = null;
+      draft = '';
+      await generateAnswer(sessionId, message.id, epoch);
+    } catch (cause) {
+      if (epoch === chatEpoch) chatError = String(cause) + ' Tente o mesmo envio novamente; a tentativa mantém seu identificador.';
+    } finally {
+      if (epoch === chatEpoch) { partial = ''; chatBusy = false; }
+    }
+  }
+
+  async function retryChat() {
+    if (!retryAvailable || chatBusy || chatLoading || !selected || !hasKey || !ownerStatus?.unlocked) return;
+    const epoch = chatEpoch;
+    const sessionId = selected;
+    const userId = retryMessageId;
+    chatBusy = true;
+    chatError = '';
+    retryMessageId = '';
+    try {
+      const history = await invoke<ChatMessage[]>('chat_history', { sessionId });
+      if (epoch !== chatEpoch) return;
+      messages = history;
+      if (history.at(-1)?.id !== userId || history.at(-1)?.role !== 'user') {
+        chatError = 'O histórico mudou. Nenhuma mensagem foi reenviada.';
+        return;
+      }
+      await generateAnswer(sessionId, userId, epoch);
+    } catch (cause) {
+      if (epoch === chatEpoch) chatError = String(cause);
+    } finally {
+      if (epoch === chatEpoch) { partial = ''; chatBusy = false; }
+    }
+  }
+
+  async function cancelChat() {
+    if (!generating || cancelling) return;
+    const epoch = chatEpoch;
+    cancelling = true;
+    try { await invoke('chat_cancel', { runId }); }
+    catch (cause) {
+      if (epoch === chatEpoch) { chatError = String(cause); cancelling = false; }
+    }
+  }
+
+  function clearPrivateState() {
+    chatEpoch++;
+    chats = []; messages = []; selected = ''; partial = ''; draft = ''; apiKey = '';
+    hasKey = false; chatBusy = false; chatLoading = false; generating = false;
+    cancelling = false; retryMessageId = ''; runId = ''; renaming = false; renameDraft = '';
+    chatError = ''; info = null; ownerPassword = ''; ownerConfirm = ''; pendingSend = null;
+    view = 'chat';
+  }
+
+  async function verifySession() {
+    if (ownerBusy || sessionCheckRunning || !ownerStatus?.unlocked) return;
+    sessionCheckRunning = true;
+    const epoch = ownerEpoch;
+    try {
+      const status = await invoke<OwnerStatus>('owner_status');
+      if (epoch !== ownerEpoch) return;
+      if (!status.unlocked) {
+        ownerBusy = true;
+        ownerEpoch++;
+        clearPrivateState();
+        ownerStatus = status;
+        ownerError = 'Sua sessão expirou. Entre novamente.';
+        await invoke('lock_owner').catch(() => {});
+        ownerBusy = false;
+      }
+    } catch {
+      if (epoch !== ownerEpoch) return;
+      ownerBusy = true;
+      ownerEpoch++;
+      clearPrivateState();
+      ownerStatus = { configured: true, unlocked: false, displayName: null };
+      ownerError = 'Não foi possível verificar a sessão. Entre novamente.';
+      await invoke('lock_owner').catch(() => {});
+      ownerBusy = false;
+    } finally {
+      sessionCheckRunning = false;
+    }
+  }
+
+  async function refreshOwner() {
+    const epoch = ownerEpoch;
+    try {
+      const status = await invoke<OwnerStatus>('owner_status');
+      if (epoch !== ownerEpoch) return;
+      if (!status.unlocked) clearPrivateState();
+      ownerStatus = status;
+      ownerError = null;
+      if (status.unlocked) await loadChat();
+    } catch (cause) {
+      if (epoch !== ownerEpoch) return;
+      clearPrivateState();
+      ownerStatus = null;
       ownerError = String(cause);
     }
   }
@@ -45,6 +326,7 @@
       return;
     }
     ownerBusy = true;
+    ownerEpoch++;
     ownerError = null;
     try {
       if (!ownerStatus.configured) {
@@ -64,18 +346,28 @@
   }
 
   async function lockOwner() {
+    if (ownerBusy) return;
+    ownerBusy = true;
+    ownerEpoch++;
+    clearPrivateState();
+    ownerStatus = { configured: true, unlocked: false, displayName: null };
     try {
       await invoke('lock_owner');
       await refreshOwner();
       await loadBootstrap();
     } catch (cause) {
       ownerError = String(cause);
+    } finally {
+      ownerBusy = false;
     }
   }
 
   async function loadBootstrap() {
     try {
-      info = await invoke<BootstrapInfo>('bootstrap');
+      const epoch = ownerEpoch;
+      const result = await invoke<BootstrapInfo>('bootstrap');
+      if (epoch !== ownerEpoch) return;
+      info = result;
       error = null;
     } catch (cause) {
       error = String(cause);
@@ -105,9 +397,16 @@
 
     void loadBootstrap();
     void refreshOwner();
+    const interval = window.setInterval(() => void verifySession(), 1000);
+    const onFocus = () => void verifySession();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
 
     return () => {
       disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
       unlisten?.();
     };
   });
@@ -130,6 +429,7 @@
     <span class="pill">{info ? `v${info.version}` : 'conectando…'}</span>
   </header>
 
+  {#if !ownerStatus?.unlocked}
   <section class="intro">
     <div class="intro-text">
       <p>
@@ -143,7 +443,7 @@
     </div>
     <img class="mascot" src="/tina.png" alt="" aria-hidden="true" />
   </section>
-
+  {/if}
 
   <section class="owner-onboarding" aria-label="Conta do proprietário">
     <Card title={ownerStatus?.configured ? 'Acesso do proprietário' : 'Crie sua conta na Tina'}>
@@ -199,6 +499,63 @@
     </Card>
   </section>
 
+  {#if ownerStatus?.unlocked}
+    <section class="workspace" aria-label="Área principal">
+      <nav class="app-nav" aria-label="Navegação principal">
+        <button type="button" class:active={view === 'chat'} aria-current={view === 'chat' ? 'page' : undefined} onclick={() => (view = 'chat')}>Chat</button>
+        <button type="button" class:active={view === 'pessoal'} aria-current={view === 'pessoal' ? 'page' : undefined} onclick={() => (view = 'pessoal')}>Pessoal</button>
+      </nav>
+
+      {#if view === 'chat'}
+      <section class="chat-shell" aria-label="Chat da Tina">
+        <aside>
+          <h2>Conversas</h2>
+          <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { chatEpoch++; selected = ''; messages = []; partial = ''; draft = ''; retryMessageId = ''; chatError = ''; renaming = false; renameDraft = ''; }}>Nova conversa</button>
+          {#each chats as chat (chat.id)}
+            <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => openChat(chat.id)} aria-pressed={selected === chat.id}>{chat.title}</button>
+          {/each}
+        </aside>
+        <div class="chat-main">
+          <h2>Tina</h2>
+          {#if selected}
+            {#if renaming}
+              <form onsubmit={renameChat}>
+                <label for="chat-title">Nome da conversa</label>
+                <input id="chat-title" required maxlength="120" bind:value={renameDraft} disabled={chatLoading || chatBusy} />
+                <button type="submit" disabled={chatLoading || chatBusy || !renameDraft.trim()}>Salvar nome</button>
+                <button type="button" disabled={chatLoading} onclick={() => { renaming = false; renameDraft = ''; }}>Cancelar</button>
+              </form>
+            {:else}
+              <button disabled={chatBusy || chatLoading || !!pendingSend} onclick={() => { renameDraft = chats.find((chat) => chat.id === selected)?.title ?? ''; renaming = true; }}>Renomear conversa</button>
+            {/if}
+          {/if}
+          {#if !hasKey}
+            <form onsubmit={saveKey}>
+              <label for="nvidia-key">Chave NVIDIA NIM</label>
+              <input id="nvidia-key" type="password" autocomplete="off" required disabled={chatLoading || chatBusy} bind:value={apiKey} />
+              <button type="submit" disabled={chatLoading || chatBusy || !apiKey.trim()}>Salvar no cofre Windows</button>
+            </form>
+          {/if}
+          {#key selected}
+            <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} greeting={initialGreeting} />
+          {/key}
+          {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
+          {#if retryAvailable && !chatBusy}
+            <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
+          {/if}
+          <ChatComposer bind:draft disabled={chatLoading || !hasKey} readOnly={!!pendingSend} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
+        </div>
+      </section>
+      {:else}
+        <section class="pessoal-shell" aria-label="Pessoal">
+          <Card title="Pessoal">
+            <p>Este espaço reunirá conversas e contexto pessoal quando os módulos correspondentes estiverem disponíveis.</p>
+            <p class="detail">Por enquanto, a Tina não inventa atividades nem cria dados fictícios. Use o Chat para conversar com a Tina e acompanhar o que já existe na instalação.</p>
+          </Card>
+        </section>
+      {/if}
+    </section>
+  {:else}
   <section class="grid" aria-label="Estado da instalação">
     <Card title="Ambiente desktop">
       {#snippet badge()}
@@ -239,9 +596,22 @@
       recompilam o aplicativo via Tauri.
     </p>
   </footer>
+  {/if}
 </main>
 
 <style>
+  .workspace { display: flex; flex-direction: column; gap: 1rem; }
+  .app-nav { display: inline-flex; gap: .5rem; align-self: flex-start; padding: .3rem; border: 1px solid var(--tina-border); border-radius: var(--tina-radius-pill); background: var(--tina-surface-tint); }
+  .app-nav button { border: 0; background: transparent; color: var(--tina-text-muted); padding: .55rem .95rem; border-radius: var(--tina-radius-pill); font: inherit; font-weight: 600; cursor: pointer; }
+  .app-nav button.active { background: #fff; color: var(--tina-pink-deep); box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+  .app-nav button:focus-visible { outline: 2px solid var(--tina-pink); outline-offset: 2px; }
+  .chat-shell { display: grid; grid-template-columns: minmax(130px, 220px) 1fr; gap: 1rem; }
+  .chat-shell aside, .chat-main { display: flex; flex-direction: column; gap: .75rem; min-width: 0; padding: 1rem; border: 1px solid var(--tina-border); border-radius: 12px; background: var(--tina-surface-tint); }
+  .chat-main form { display: flex; flex-direction: column; gap: .5rem; }
+  .chat-shell button, .chat-shell input { padding: .65rem; border: 1px solid var(--tina-border); border-radius: 8px; font: inherit; }
+  .pessoal-shell { max-width: 52rem; }
+  @media (max-width: 640px) { .chat-shell { grid-template-columns: 1fr; } .app-nav { width: 100%; } .app-nav button { flex: 1; } }
+
   :global(*) {
     box-sizing: border-box;
   }

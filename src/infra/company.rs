@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::core::company::{Company, CompanyStatus};
 use crate::error::{Result, TinaError};
+use crate::infra::audit::{begin_owner_write, commit_owner_write};
 
 /// Representa uma linha de empresa do banco
 #[derive(sqlx::FromRow, Debug)]
@@ -246,5 +247,96 @@ impl<'a> CompanyRepository<'a> {
         .await?;
 
         Ok(company_count > 0)
+    }
+
+    /// Cria empresa com autoria verificada pelo serviço de aplicação.
+    /// Garante atomicidade entre criação e auditoria.
+    pub(crate) async fn create_as_owner(
+        &self,
+        installation_id: &str,
+        owner_id: &str,
+        name: &str,
+    ) -> Result<Company> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO companies (id, installation_id, name, status, created_at)
+            VALUES (?, ?, ?, 'active', datetime('now'))
+            "#,
+        )
+        .bind(&id)
+        .bind(installation_id)
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+
+        let row: CompanyRow = sqlx::query_as(
+            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
+        commit_owner_write(tx, installation_id).await?;
+        Ok(row.into())
+    }
+
+    /// Atualiza o nome da empresa com autoria no mesmo commit.
+    pub(crate) async fn update_name_as_owner(
+        &self,
+        company_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            "UPDATE companies SET name = ? WHERE id = ? AND installation_id = ? AND status = 'active'",
+        )
+        .bind(new_name)
+        .bind(company_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Unauthorized("empresa fora da instalação".into()));
+        }
+        commit_owner_write(tx, installation_id).await
+    }
+
+    /// Arquiva uma empresa com autoria e verificação de restrições.
+    pub(crate) async fn archive_as_owner(
+        &self,
+        company_id: &str,
+        installation_id: &str,
+        owner_id: &str,
+    ) -> Result<()> {
+        let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE companies
+            SET status = 'inactive'
+            WHERE id = ?
+              AND installation_id = ?
+              AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM departments d
+                  WHERE d.company_id = companies.id
+                    AND d.status = 'active'
+              )
+            "#,
+        )
+        .bind(company_id)
+        .bind(installation_id)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(TinaError::Other(
+                "empresa indisponível ou com departamentos ativos".into(),
+            ));
+        }
+        commit_owner_write(tx, installation_id).await
     }
 }

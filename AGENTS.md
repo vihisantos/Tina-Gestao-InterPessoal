@@ -101,6 +101,15 @@ Reutilize, não duplique. Local: `src-frontend/src/lib/components/`.
 - Documentação de governança e UI em **português (Brasil)**; identificadores técnicos
   podem ficar em inglês.
 
+### Migrations e dados locais (obrigatório)
+
+- **Migrations publicadas são imutáveis.** Nunca edite uma migration já publicada/compartilhada após ela ter sido aplicada por qualquer ambiente.
+- **Alterações de schema exigem novas migrations incrementais.** Use uma migration nova, versionada e forward-only; prefira DDL aditivo/idempotente quando possível.
+- **Teste upgrades em bancos de versões anteriores.** Antes de distribuir, valide a inicialização contra bancos legados reais/representativos, não apenas banco novo.
+- **Nunca recrie automaticamente um banco incompatível.** Em incompatibilidade de migration/schema, falhe de forma segura, preserve dados e exija diagnóstico/backup/decisão explícita. Não apague `tina.db`, WAL/SHM, TOML ou credenciais do cofre automaticamente.
+
+**Dívida técnica registrada (antes da distribuição a usuários com bancos legados):** a `migration/001_initial.sql` foi alterada após publicação histórica (`d42d7e1` aplicada em bancos legados; `e5c070c/HEAD` tem checksum diferente), causando falha de checksum SQLx em upgrades. Antes de distribuir a Tina para usuários com bancos legados, criar estratégia de upgrade segura e auditável (compatibilidade/reparo forward-only ou ferramenta de migração com backup e confirmação explícita), sem apagar dados nem adulterar checksums silenciosamente.
+
 ## 6. Comandos
 
 ```bash

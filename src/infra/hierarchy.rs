@@ -350,6 +350,166 @@ impl<'a> HierarchyService<'a> {
         }
     }
 
+    /// Define supervisor com autoria transacional.
+    ///
+    /// Similar a [`Self::set_supervisor`] mas insere/remover o contexto de
+    /// auditoria antes/depois da operação, permitindo que os triggers capturem
+    /// o actor correto. O `owner_uuid` deve ser o UUID do proprietário da
+    /// instalação.
+    ///
+    /// Usa uma única transação SQLx para garantir atomicidade entre:
+    /// inserção do contexto de autoria, validação de escopo, alteração do
+    /// supervisor, registro do histórico, remoção do contexto e confirmação.
+    pub async fn set_supervisor_with_owner(
+        &self,
+        employee_id: &str,
+        company_id: &str,
+        installation_id: &str,
+        owner_uuid: &str,
+        new_supervisor_id: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<SupervisorChange> {
+        let mut tx = self.pool.begin().await?;
+
+        // Passo 1: Inserir contexto de autoria - falha se owner_uuid inválido
+        let inserted = sqlx::query(
+            "INSERT INTO organizational_audit_actor_context (installation_id, actor_id) \
+             SELECT id, owner_uuid FROM installations WHERE id = ? AND owner_uuid = ?",
+        )
+        .bind(installation_id)
+        .bind(owner_uuid)
+        .execute(&mut *tx)
+        .await?;
+
+        if inserted.rows_affected() == 0 {
+            let _ = tx.rollback().await;
+            return Err(TinaError::Unauthorized(
+                "identidade de auditoria inválida".into(),
+            ));
+        }
+
+        // Passo 2: Iniciar transação e validar escopo (sem BEGIN separado)
+        // A inserção acima já validou o owner_uuid via subquery
+
+        // Passo 3: Executar alteração do supervisor com validações originais
+        let outcome = self
+            .apply_supervisor_change_in_transaction(
+                &mut tx,
+                employee_id,
+                company_id,
+                new_supervisor_id,
+                reason,
+                Some(owner_uuid),
+            )
+            .await;
+
+        match outcome {
+            Ok(change) => {
+                // Passo 4: Remover contexto antes do COMMIT
+                sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                Ok(change)
+            }
+            Err(error) => {
+                // Passo 5: Remover contexto antes do ROLLBACK
+                let _ = sqlx::query(
+                    "DELETE FROM organizational_audit_actor_context WHERE installation_id = ?",
+                )
+                .bind(installation_id)
+                .execute(&mut *tx)
+                .await;
+                let _ = tx.rollback().await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Versão de apply_supervisor_change que usa conexão transacional existente
+    /// sem gerenciar sua própria transação.
+    async fn apply_supervisor_change_in_transaction(
+        &self,
+        conn: &mut SqliteConnection,
+        employee_id: &str,
+        company_id: &str,
+        new_supervisor_id: Option<&str>,
+        reason: Option<&str>,
+        author_id: Option<&str>,
+    ) -> Result<SupervisorChange> {
+        let employee = HierarchyRepository::find_active_in_company(conn, employee_id, company_id)
+            .await?
+            .ok_or(HierarchyError::EmployeeUnavailable)?;
+
+        let previous_supervisor_id = employee.supervisor_id.clone();
+
+        if previous_supervisor_id.as_deref() == new_supervisor_id {
+            return Ok(SupervisorChange {
+                employee_id: employee.id,
+                previous_supervisor_id: previous_supervisor_id.clone(),
+                new_supervisor_id: previous_supervisor_id,
+                operation: None,
+            });
+        }
+
+        if let Some(supervisor_id) = new_supervisor_id {
+            if supervisor_id == employee_id {
+                return Err(HierarchyError::SelfSupervision.into());
+            }
+
+            let supervisor = HierarchyRepository::find_in_company(conn, supervisor_id, company_id)
+                .await?
+                .ok_or(HierarchyError::SupervisorUnavailable)?;
+
+            if supervisor.status != EmployeeStatus::Active {
+                return Err(HierarchyError::SupervisorUnavailable.into());
+            }
+
+            // O funcionário não pode passar a responder a alguém que já
+            // depende dele, direta ou indiretamente.
+            if HierarchyRepository::is_in_supervisor_chain(conn, supervisor_id, employee_id).await?
+            {
+                return Err(HierarchyError::CycleDetected.into());
+            }
+        }
+
+        let operation = match (&previous_supervisor_id, new_supervisor_id) {
+            (None, Some(_)) => HierarchyOperation::Assigned,
+            (Some(_), None) => HierarchyOperation::Removed,
+            (Some(_), Some(_)) => HierarchyOperation::Changed,
+            // Relação inalterada já retornou acima.
+            (None, None) => unreachable!("unchanged relation is returned before this point"),
+        };
+
+        let updated =
+            HierarchyRepository::update_supervisor(conn, employee_id, new_supervisor_id).await?;
+
+        if !updated {
+            return Err(HierarchyError::EmployeeUnavailable.into());
+        }
+
+        HierarchyRepository::insert_history(
+            conn,
+            employee_id,
+            previous_supervisor_id.as_deref(),
+            new_supervisor_id,
+            operation,
+            reason,
+            author_id,
+        )
+        .await?;
+
+        Ok(SupervisorChange {
+            employee_id: employee.id,
+            previous_supervisor_id,
+            new_supervisor_id: new_supervisor_id.map(str::to_string),
+            operation: Some(operation),
+        })
+    }
+
     async fn apply_supervisor_change(
         &self,
         conn: &mut SqliteConnection,

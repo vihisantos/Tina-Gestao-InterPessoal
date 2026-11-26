@@ -11,7 +11,8 @@
     "tauri:info": "tauri info",
     "frontend:dev": "npm run dev --workspace tina-frontend",
     "frontend:build": "npm run build --workspace tina-frontend",
-    "frontend:check": "npm run check --workspace tina-frontend"
+    "frontend:check": "npm run check --workspace tina-frontend",
+    "frontend:test": "npm run test --workspace tina-frontend"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

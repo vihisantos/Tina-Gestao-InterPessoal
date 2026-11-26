@@ -441,6 +441,23 @@ impl OwnerAccess {
         Ok(session.unlocked)
     }
 
+    /// Identidade temporal da sessão atual, sem expor a credencial.
+    pub(crate) fn session_marker(&self) -> Result<Option<Instant>> {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        if !session.unlocked
+            || session
+                .expires_at
+                .is_none_or(|expiry| expiry <= Instant::now())
+        {
+            *session = Session::default();
+            return Ok(None);
+        }
+        Ok(session.expires_at)
+    }
+
     /// Encerra a sessão imediatamente.
     pub fn lock(&self) -> Result<()> {
         let mut session = self
@@ -448,6 +465,35 @@ impl OwnerAccess {
             .lock()
             .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
         *session = Session::default();
+        Ok(())
+    }
+
+    /// Força expiração da sessão em testes isolados.
+    #[cfg(test)]
+    pub fn expire_session_for_test(&self) -> Result<()> {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        if session.unlocked {
+            session.expires_at = Some(Instant::now() - Duration::from_secs(1));
+        }
+        Ok(())
+    }
+
+    /// Marca sessão como autenticada em testes isolados, sem cofre Windows.
+    #[cfg(test)]
+    pub fn unlock_for_test(&self, timeout_seconds: u64) -> Result<()> {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| TinaError::Auth("sessão indisponível".into()))?;
+        session.unlocked = true;
+        session.expires_at = Some(
+            Instant::now()
+                .checked_add(Duration::from_secs(timeout_seconds.max(1)))
+                .ok_or_else(|| TinaError::Auth("duração de sessão inválida".into()))?,
+        );
         Ok(())
     }
 }

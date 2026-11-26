@@ -84,71 +84,40 @@ pub async fn get_company(
     Ok(CompanyDto::from(company))
 }
 
-/// Cria uma nova empresa (o installation_id é obtido automaticamente do contexto)
+/// Cria uma nova empresa (o installation_id é obtido automaticamente do contexto confiável)
 #[tauri::command]
 pub async fn create_company(
     state: State<'_, TinaApp>,
     request: CreateCompanyRequest,
 ) -> Result<CompanyDto, String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.companies();
-    let installation_id = get_installation_id(&state);
-
-    // O installation_id é obtido automaticamente do contexto confiável
-    // NÃO confiar no frontend para fornecer esse identificador
-    let company = repo
-        .create(&installation_id, &request.name)
+    let company = state
+        .owner_create_company(&request.name)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(CompanyDto::from(company))
 }
 
-/// Atualiza o nome da empresa
+/// Atualiza o nome da empresa (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn update_company(
     state: State<'_, TinaApp>,
     company_id: String,
     request: UpdateCompanyRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.companies();
-    let installation_id = get_installation_id(&state);
-
-    repo.update_name(&company_id, &installation_id, &request.name)
+    state
+        .owner_update_company_name(&company_id, &request.name)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
-/// Archiva uma empresa (não pode ter departamentos ativos)
+/// Archiva uma empresa (não pode ter departamentos ativos) - com auditoria de autoria transacional
 #[tauri::command]
 pub async fn archive_company(state: State<'_, TinaApp>, company_id: String) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
-        .map_err(|e| e.to_string())?;
-    let repo = db.companies();
-    let installation_id = get_installation_id(&state);
-
-    // Verificar pertencimento à instalação (escopo aplicado no SQL)
-    if !repo
-        .can_archive_for_installation(&company_id, &installation_id)
+    state
+        .owner_archive_company(&company_id)
         .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err(
-            "Empresa não pode ser arquivada: ainda possui departamentos ativos ou não pertence à instalação".to_string(),
-        );
-    }
-
-    repo.archive(&company_id, &installation_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }

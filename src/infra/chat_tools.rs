@@ -5,9 +5,9 @@ use serde_json::{json, Value};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
-use crate::error::{Result, TinaError};
 use super::audit::{begin_owner_write, commit_owner_write};
 use super::chat::ChatMessage;
+use crate::error::{Result, TinaError};
 
 pub(crate) fn definition() -> Value {
     json!({
@@ -43,7 +43,9 @@ struct Args {
 
 fn parse(name: &str, input: &str) -> Result<Args> {
     if name != "create_department" || input.len() > 16_384 {
-        return Err(TinaError::ToolError("ferramenta desconhecida ou argumentos extensos".into()));
+        return Err(TinaError::ToolError(
+            "ferramenta desconhecida ou argumentos extensos".into(),
+        ));
     }
     let mut args: Args = serde_json::from_str(input)
         .map_err(|_| TinaError::Validation("argumentos de departamento inválidos".into()))?;
@@ -52,15 +54,27 @@ fn parse(name: &str, input: &str) -> Result<Args> {
     args.company_name = args.company_name.map(|v| v.trim().to_owned());
     args.description = args.description.map(|v| v.trim().to_owned());
     if !matches!(args.organization_kind.as_str(), "personal" | "business")
-        || args.name.is_empty() || args.name.chars().count() > 120
+        || args.name.is_empty()
+        || args.name.chars().count() > 120
         || args.name.chars().any(char::is_control)
-        || args.code.is_empty() || args.code.len() > 40
-        || !args.code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        || args.description.as_ref().is_some_and(|s| s.chars().count() > 2000)
-        || args.company_name.as_ref().is_some_and(|s| s.is_empty() || s.chars().count() > 160 || s.chars().any(char::is_control))
+        || args.code.is_empty()
+        || args.code.len() > 40
+        || !args
+            .code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        || args
+            .description
+            .as_ref()
+            .is_some_and(|s| s.chars().count() > 2000)
+        || args.company_name.as_ref().is_some_and(|s| {
+            s.is_empty() || s.chars().count() > 160 || s.chars().any(char::is_control)
+        })
         || (args.organization_kind == "business" && args.company_name.is_none())
     {
-        return Err(TinaError::Validation("informe nome, código e organização válidos".into()));
+        return Err(TinaError::Validation(
+            "informe nome, código e organização válidos".into(),
+        ));
     }
     Ok(args)
 }
@@ -88,8 +102,12 @@ async fn assistant(
         .bind(&id).bind(session).bind(installation).bind(content).execute(&mut **tx).await?;
     sqlx::query("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ? AND installation_id = ?")
         .bind(session).bind(installation).execute(&mut **tx).await?;
-    Ok(sqlx::query_as("SELECT id, role, content, created_at FROM chat_messages WHERE id = ?")
-        .bind(id).fetch_one(&mut **tx).await?)
+    Ok(
+        sqlx::query_as("SELECT id, role, content, created_at FROM chat_messages WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?,
+    )
 }
 
 pub(crate) async fn propose(
@@ -106,13 +124,17 @@ pub(crate) async fn propose(
         "SELECT id FROM chat_messages WHERE installation_id = ? AND session_id = ? AND role = 'user' AND id = (SELECT id FROM chat_messages WHERE installation_id = ? AND session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1)"
     ).bind(installation).bind(session).bind(installation).bind(session).fetch_optional(&mut *tx).await?;
     if latest.as_deref() != Some(user) {
-        return Err(TinaError::Unauthorized("mensagem de origem indisponível".into()));
+        return Err(TinaError::Unauthorized(
+            "mensagem de origem indisponível".into(),
+        ));
     }
     let organizations: Vec<(String, String)> = sqlx::query_as(
         "SELECT id, name FROM companies WHERE installation_id = ? AND kind = ? AND status = 'active'"
     ).bind(installation).bind(&args.organization_kind).fetch_all(&mut *tx).await?;
     let mut matching = organizations.iter().filter(|(_, name)| {
-        args.company_name.as_ref().is_none_or(|requested| requested.to_lowercase() == name.to_lowercase())
+        args.company_name
+            .as_ref()
+            .is_none_or(|requested| requested.to_lowercase() == name.to_lowercase())
     });
     let organization = matching.next();
     if organization.is_none() || matching.next().is_some() {
@@ -138,8 +160,16 @@ pub(crate) async fn propose(
 
 const PENDING: &str = "SELECT p.id,p.company_id,p.company_name,p.organization_kind,p.name,p.code,p.description FROM chat_department_proposals p WHERE p.installation_id = ? AND p.session_id = ? AND p.status = 'pending' AND p.proposal_message_id = (SELECT m.id FROM chat_messages m WHERE m.installation_id = p.installation_id AND m.session_id = p.session_id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1)";
 
-pub(crate) async fn pending(pool: &SqlitePool, installation: &str, session: &str) -> Result<Option<DepartmentProposal>> {
-    Ok(sqlx::query_as(PENDING).bind(installation).bind(session).fetch_optional(pool).await?)
+pub(crate) async fn pending(
+    pool: &SqlitePool,
+    installation: &str,
+    session: &str,
+) -> Result<Option<DepartmentProposal>> {
+    Ok(sqlx::query_as(PENDING)
+        .bind(installation)
+        .bind(session)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub(crate) async fn decide(
@@ -163,8 +193,12 @@ pub(crate) async fn decide(
         commit_owner_write(tx, installation).await?;
         return Ok(message);
     }
-    let p: DepartmentProposal = sqlx::query_as(PENDING).bind(installation).bind(session)
-        .fetch_optional(&mut *tx).await?.filter(|p: &DepartmentProposal| p.id == proposal)
+    let p: DepartmentProposal = sqlx::query_as(PENDING)
+        .bind(installation)
+        .bind(session)
+        .fetch_optional(&mut *tx)
+        .await?
+        .filter(|p: &DepartmentProposal| p.id == proposal)
         .ok_or_else(|| TinaError::Unauthorized("proposta inexistente ou substituída".into()))?;
     let status;
     let content;
@@ -177,14 +211,18 @@ pub(crate) async fn decide(
         .bind(&p.company_id).bind(installation).bind(&p.organization_kind).bind(&p.company_name)
         .execute(&mut *tx).await?;
         if result.rows_affected() != 1 {
-            return Err(TinaError::Validation("organização alterada ou indisponível; refaça o pedido".into()));
+            return Err(TinaError::Validation(
+                "organização alterada ou indisponível; refaça o pedido".into(),
+            ));
         }
         status = "approved";
         content = format!("Departamento criado com sucesso: {} ({}), na organização {}. Consulte a área Organizações.", p.name, p.code, p.company_name);
     } else {
         entity_id = p.id.clone();
         status = "rejected";
-        content = "Criação de departamento recusada. Nenhum departamento foi criado por esta proposta.".to_string();
+        content =
+            "Criação de departamento recusada. Nenhum departamento foi criado por esta proposta."
+                .to_string();
     }
     sqlx::query("INSERT INTO organizational_audit_events(id,installation_id,company_id,entity_type,entity_id,action,outcome,actor_type,actor_id,metadata_json) VALUES (?,?,?,'tool',?,'create_department',?,'owner',?,?)")
         .bind(Uuid::new_v4().to_string()).bind(installation).bind(&p.company_id).bind(entity_id)
@@ -206,28 +244,82 @@ mod tests {
         let args = r#"{"organization_kind":"personal","name":"Finanças","code":"fin"}"#;
         assert_eq!(parse("create_department", args).unwrap().code, "FIN");
         assert!(parse("shell", args).is_err());
-        assert!(parse("create_department", r#"{"organization_kind":"personal","name":"Finanças","code":"fin","owner_id":"fake"}"#).is_err());
-        assert!(parse("create_department", r#"{"organization_kind":"business","name":"Finanças","code":"fin"}"#).is_err());
+        assert!(parse(
+            "create_department",
+            r#"{"organization_kind":"personal","name":"Finanças","code":"fin","owner_id":"fake"}"#
+        )
+        .is_err());
+        assert!(parse(
+            "create_department",
+            r#"{"organization_kind":"business","name":"Finanças","code":"fin"}"#
+        )
+        .is_err());
     }
 
     #[tokio::test]
     async fn approval_is_persistent_scoped_and_idempotent() {
         let path = std::env::temp_dir().join(format!("tina-tool-{}.db", Uuid::new_v4()));
-        let app = crate::TinaApp::initialize_at(&path, "tool-install", "tool-owner").await.unwrap();
+        let app = crate::TinaApp::initialize_at(&path, "tool-install", "tool-owner")
+            .await
+            .unwrap();
         app.unlock_owner_for_test().unwrap();
-        let company = app.owner_create_company_with_kind("Pessoal", "personal").await.unwrap();
+        let company = app
+            .owner_create_company_with_kind("Pessoal", "personal")
+            .await
+            .unwrap();
         let session = app.owner_create_chat("Ferramenta").await.unwrap();
-        let user = app.owner_append_chat_message(&session.id, "Crie Finanças pessoais").await.unwrap();
-        propose(app.database().pool(), "tool-install", &session.id, &user.id, "create_department",
-            r#"{"organization_kind":"personal","name":"Finanças","code":"FIN"}"#).await.unwrap();
-        let proposal = app.owner_pending_department(&session.id).await.unwrap().unwrap();
-        assert!(app.database().departments().list_by_company(&company.id).await.unwrap().is_empty());
-        let first = app.owner_decide_department(&session.id, &proposal.id, true).await.unwrap();
-        let again = app.owner_decide_department(&session.id, &proposal.id, true).await.unwrap();
+        let user = app
+            .owner_append_chat_message(&session.id, "Crie Finanças pessoais")
+            .await
+            .unwrap();
+        propose(
+            app.database().pool(),
+            "tool-install",
+            &session.id,
+            &user.id,
+            "create_department",
+            r#"{"organization_kind":"personal","name":"Finanças","code":"FIN"}"#,
+        )
+        .await
+        .unwrap();
+        let proposal = app
+            .owner_pending_department(&session.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(app
+            .database()
+            .departments()
+            .list_by_company(&company.id)
+            .await
+            .unwrap()
+            .is_empty());
+        let first = app
+            .owner_decide_department(&session.id, &proposal.id, true)
+            .await
+            .unwrap();
+        let again = app
+            .owner_decide_department(&session.id, &proposal.id, true)
+            .await
+            .unwrap();
         assert_eq!(first.id, again.id);
-        assert_eq!(app.database().departments().list_by_company(&company.id).await.unwrap().len(), 1);
-        assert!(app.owner_pending_department(&session.id).await.unwrap().is_none());
-        assert!(app.owner_decide_department("other-session", &proposal.id, true).await.is_err());
+        assert_eq!(
+            crate::infra::DepartmentRepository::new(app.database().pool())
+                .list_by_company(&company.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(app
+            .owner_pending_department(&session.id)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(app
+            .owner_decide_department("other-session", &proposal.id, true)
+            .await
+            .is_err());
         app.database().pool().close().await;
         let _ = std::fs::remove_file(path);
     }

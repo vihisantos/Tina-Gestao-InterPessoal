@@ -312,7 +312,9 @@ async fn chat_pending_department(
     app: State<'_, TinaApp>,
     session_id: String,
 ) -> Result<Option<tina::infra::chat_tools::DepartmentProposal>, String> {
-    app.owner_pending_department(&session_id).await.map_err(|e| e.to_string())
+    app.owner_pending_department(&session_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -322,7 +324,9 @@ async fn chat_decide_department(
     proposal_id: String,
     approved: bool,
 ) -> Result<tina::infra::chat::ChatMessage, String> {
-    app.owner_decide_department(&session_id, &proposal_id, approved).await.map_err(|e| e.to_string())
+    app.owner_decide_department(&session_id, &proposal_id, approved)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

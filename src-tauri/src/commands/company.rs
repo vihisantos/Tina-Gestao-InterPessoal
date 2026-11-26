@@ -94,7 +94,10 @@ pub async fn create_company(
     request: CreateCompanyRequest,
 ) -> Result<CompanyDto, String> {
     let company = state
-        .owner_create_company_with_kind(&request.name, request.kind.as_deref().unwrap_or("business"))
+        .owner_create_company_with_kind(
+            &request.name,
+            request.kind.as_deref().unwrap_or("business"),
+        )
         .await
         .map_err(|e| e.to_string())?;
 

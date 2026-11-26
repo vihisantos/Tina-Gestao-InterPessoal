@@ -531,9 +531,18 @@ pub(crate) async fn stream_nvidia_from_base(
     on_delta: impl FnMut(&str) -> Result<()>,
 ) -> Result<String> {
     match stream_nvidia_turn(
-        base_url, key, model, messages, max_tokens, response_timeout, cancelled,
-        false, on_delta,
-    ).await? {
+        base_url,
+        key,
+        model,
+        messages,
+        max_tokens,
+        response_timeout,
+        cancelled,
+        false,
+        on_delta,
+    )
+    .await?
+    {
         NvidiaTurn::Text(text) => Ok(text),
         NvidiaTurn::Tool(_) => Err(TinaError::Other("tool não habilitada".into())),
     }
@@ -555,19 +564,30 @@ pub(crate) struct ToolCall {
 fn accumulate_tool(value: &serde_json::Value, call: &mut ToolCall) -> Result<()> {
     let calls = value.pointer("/choices/0/delta/tool_calls");
     if let Some(calls) = calls {
-        let entries = calls.as_array().ok_or_else(|| TinaError::ToolError("tool_calls inválido".into()))?;
+        let entries = calls
+            .as_array()
+            .ok_or_else(|| TinaError::ToolError("tool_calls inválido".into()))?;
         for item in entries {
             if item.get("index").and_then(|v| v.as_u64()) != Some(0)
-                || item.get("type").and_then(|v| v.as_str()).is_some_and(|t| t != "function")
+                || item
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|t| t != "function")
             {
-                return Err(TinaError::ToolError("apenas uma chamada de função por rodada".into()));
+                return Err(TinaError::ToolError(
+                    "apenas uma chamada de função por rodada".into(),
+                ));
             }
             if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
                 if !call.id.is_empty() && call.id != id {
-                    return Err(TinaError::ToolError("identificador de chamada conflitante".into()));
+                    return Err(TinaError::ToolError(
+                        "identificador de chamada conflitante".into(),
+                    ));
                 }
                 if id.len() > 256 {
-                    return Err(TinaError::ToolError("identificador de chamada extenso".into()));
+                    return Err(TinaError::ToolError(
+                        "identificador de chamada extenso".into(),
+                    ));
                 }
                 call.id = id.to_owned();
             }
@@ -655,7 +675,11 @@ pub(crate) async fn stream_nvidia_turn(
                         return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
                     }
                     accumulate_tool(&value, &mut call)?;
-                    if value.pointer("/choices/0/finish_reason").and_then(|v| v.as_str()) == Some("tool_calls") {
+                    if value
+                        .pointer("/choices/0/finish_reason")
+                        .and_then(|v| v.as_str())
+                        == Some("tool_calls")
+                    {
                         if stopped || tool_finished {
                             return Err(TinaError::ToolError("conclusão conflitante".into()));
                         }
@@ -822,7 +846,14 @@ mod tool_call_tests {
             accumulate_tool(&value, &mut call).unwrap();
         }
         assert_eq!(call.name, "create_department");
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap()["name"], "Finanças");
-        assert!(accumulate_tool(&serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":1}]}}]}), &mut call).is_err());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap()["name"],
+            "Finanças"
+        );
+        assert!(accumulate_tool(
+            &serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":1}]}}]}),
+            &mut call
+        )
+        .is_err());
     }
 }

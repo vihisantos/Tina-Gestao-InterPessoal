@@ -839,7 +839,10 @@ async fn personal_organization_is_explicit_unique_and_preserves_company_hierarch
         .unwrap();
     assert_eq!(dept.company_id, personal.id);
     let db = app.database();
-    let reloaded = db.companies().find_by_id(&personal.id).await.unwrap();
+    let reloaded = crate::infra::CompanyRepository::new(db.pool())
+        .find_by_id(&personal.id)
+        .await
+        .unwrap();
     assert_eq!(reloaded.kind, "personal");
     db.pool().close().await;
     let _ = std::fs::remove_file(path);

@@ -8,7 +8,7 @@ const row = { id: 'employee-1', name: 'Pessoa de teste', positionId: 'p', positi
   departmentId: 'd', department: 'Operações', companyId: 'c', company: 'Empresa',
   active: false, supervisor: null, responsibilities: 'Responsabilidade de teste' };
 
-beforeEach(() => invokeMock.mockReset());
+beforeEach(() => { invokeMock.mockReset(); });
 
 describe('PersonnelDirectory', () => {
   it('carrega somente os registros retornados pelo IPC e permite abrir o perfil', async () => {

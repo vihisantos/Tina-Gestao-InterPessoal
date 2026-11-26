@@ -1,5 +1,5 @@
 # CI Windows em executor próprio dedicado, sem processamento hospedado.
-# O executor deve operar em conta Windows isolada e sem privilégios administrativos.
+# Recomenda-se conta Windows isolada, sem privilégios administrativos; execução manual somente de código confiável.
 # A compilação Rust depende da formatação; testes dependem da compilação.
 # Pull requests empilhados também são validados nas respectivas branches-base.
 name: ci
@@ -17,7 +17,7 @@ jobs:
   governance:
     name: governance checks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    runs-on: [self-hosted, Windows, X64, tina-ci]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -76,7 +76,7 @@ jobs:
   rust-format:
     name: Rust formatting
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    runs-on: [self-hosted, Windows, X64, tina-ci]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -94,7 +94,7 @@ jobs:
     name: Rust and Tauri compilation (Windows)
     needs: rust-format
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    runs-on: [self-hosted, Windows, X64, tina-ci]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -111,7 +111,7 @@ jobs:
     name: Rust and Tauri tests (Windows)
     needs: rust-check
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    runs-on: [self-hosted, Windows, X64, tina-ci]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -129,7 +129,7 @@ jobs:
   frontend:
     name: Svelte frontend validation
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    runs-on: [self-hosted, Windows, X64, tina-ci]
     timeout-minutes: 60
     steps:
       - name: Checkout

@@ -15,12 +15,14 @@ A Tina deve tratar contratação como um processo, não como um cadastro isolado
 5. Preparar proposta de contratação com evidências, alternativas, contrato e limites. Se nenhuma opção satisfizer os requisitos, registrar bloqueio; não contratar com modelo provisório.
 6. Somente após autorização explícita, persistir funcionário, contrato versionado e configuração do modelo, com auditoria e isolamento. Permissões de ferramenta continuam aplicadas no backend; o contrato não concede acesso por si só.
 
-## Entrega inicial desta PR
+## Estado após a integração das PRs #73 e #74
 
-- Tool `create_position` no chat, acionável por iniciativa da Tina, com proposta persistida, aprovação/recusa, auditoria, revalidação de escopo e idempotência.
-- Contrato do processo de RH e critérios de aceite para avaliação real e contratação.
-- A criação do contrato, a consulta real ao catálogo NVIDIA, os testes comparativos e a efetivação de contratação ainda não estão implementados nesta etapa. Não oferecer ferramentas inexistentes ao modelo.
-- A branch depende da PR 73 para reaproveitar o mecanismo de propostas; revisar e mesclar a base primeiro. Nenhuma alteração direta em main.
+- Tools de RH e acesso no chat: `create_department`, `create_organization`, `create_position`, `generate_contract`, `assign_tool`, `revoke_tool`, `assign_app` e `revoke_app`. Todas passam por proposta persistida, autorização do proprietário, auditoria e revalidação de escopo.
+- A criação de cargo não cria funcionário nem concede permissão; a minuta aprovada não contrata nem escolhe modelo. `lifecycle_status` é a fonte autoritativa e `status` permanece como espelho legado.
+- Consulta ao catálogo NVIDIA e avaliação sintética existem no backend (`nvidia_models` e `nvidia_evaluate_model`) com chave do cofre, mas não possuem UI nem seleção automática de modelo; `lookup_demo` é simulada e `cost` é `None`.
+- O executor experimental `run_employee` executa apenas leitura autorizada de cargos do próprio departamento; não há dispatcher de ações nem verificação de acesso por ferramenta em chamados futuros.
+- Ainda pendem: contratação efetiva com persistência atômica, avaliação real de modelos com critérios prefixados e custo conhecido, UI para catálogo/avaliação e validação manual na janela Tauri.
+- A integração foi feita por merge sem rebase nem force push do head `9db4694` da PR #73 na branch da PR #74. Nenhuma PR foi mesclada; ambas permanecem em rascunho e nenhuma alteração foi feita diretamente em `main`.
 
 ## Validação
 

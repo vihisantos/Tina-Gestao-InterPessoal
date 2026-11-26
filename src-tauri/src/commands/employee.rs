@@ -214,22 +214,14 @@ pub async fn change_employee_position(
     employee_id: String,
     request: ChangePositionRequest,
 ) -> Result<(), String> {
-    let db = state
-        .owner_database(tina::core::authorization::Operation::Write)
+    state
+        .owner_change_employee_position(
+            &employee_id,
+            &request.position_id,
+            request.reason.as_deref(),
+        )
+        .await
         .map_err(|e| e.to_string())?;
-    let repo = db.employees();
-    let installation_id = get_installation_id(&state);
-
-    let company_id = get_employee_company_id(&db, &employee_id, &installation_id).await?;
-
-    repo.change_position_with_reason(
-        &employee_id,
-        &company_id,
-        &request.position_id,
-        request.reason.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
 
     Ok(())
 }

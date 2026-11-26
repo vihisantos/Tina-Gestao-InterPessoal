@@ -1,7 +1,9 @@
 //! Execução experimental de um funcionário, iniciada diretamente pelo proprietário.
 //! A única ferramenta executável nesta etapa é leitura de cargos do próprio departamento.
 
-use crate::core::authorization::{Actor, ActorContext, AuthorizationPolicy, Operation, ResourceScope};
+use crate::core::authorization::{
+    Actor, ActorContext, AuthorizationPolicy, Operation, ResourceScope,
+};
 use crate::error::{Result, TinaError};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -24,10 +26,13 @@ async fn scope(pool: &SqlitePool, installation: &str, employee: &str) -> Result<
 }
 
 fn context(installation: &str, employee: &str, scope: &Scope) -> ActorContext {
-    ActorContext::verified(installation.to_owned(), Actor::Employee {
-        employee_id: employee.to_owned(),
-        company_id: scope.company_id.clone(),
-    })
+    ActorContext::verified(
+        installation.to_owned(),
+        Actor::Employee {
+            employee_id: employee.to_owned(),
+            company_id: scope.company_id.clone(),
+        },
+    )
 }
 
 async fn read_positions(
@@ -37,20 +42,40 @@ async fn read_positions(
     args: &Value,
 ) -> Result<Value> {
     if args != &json!({}) {
-        return Err(TinaError::ToolError("list_positions não recebe parâmetros".into()));
+        return Err(TinaError::ToolError(
+            "list_positions não recebe parâmetros".into(),
+        ));
     }
-    super::tool_access::check_employee_tool(pool, actor, &scope.company_id, &scope.department_id, LIST).await?;
-    AuthorizationPolicy::authorize(actor, Operation::Read, ResourceScope {
-        installation_id: actor.installation_id(),
-        company_id: Some(&scope.company_id),
-    })?;
+    super::tool_access::check_employee_tool(
+        pool,
+        actor,
+        &scope.company_id,
+        &scope.department_id,
+        LIST,
+    )
+    .await?;
+    AuthorizationPolicy::authorize(
+        actor,
+        Operation::Read,
+        ResourceScope {
+            installation_id: actor.installation_id(),
+            company_id: Some(&scope.company_id),
+        },
+    )?;
     // Escopo e concessão são conferidos novamente na consulta que lê os dados.
     let Actor::Employee { employee_id, .. } = actor.actor() else {
         return Err(TinaError::Unauthorized("funcionário necessário".into()));
     };
     let rows: Vec<String> = sqlx::query_scalar("SELECT p.name FROM positions p JOIN departments d ON d.id=p.department_id JOIN companies c ON c.id=d.company_id WHERE c.installation_id=? AND c.id=? AND d.id=? AND c.status='active' AND d.status='active' AND p.status='active' AND EXISTS(SELECT 1 FROM employee_tool_grants g JOIN employees e ON e.id=g.employee_id JOIN positions ep ON ep.id=e.position_id WHERE g.installation_id=c.installation_id AND g.company_id=c.id AND g.department_id=d.id AND g.employee_id=? AND g.tool_key='list_positions' AND e.status='active' AND ep.status='active' AND ep.department_id=d.id) ORDER BY p.name LIMIT 50")
         .bind(actor.installation_id()).bind(&scope.company_id).bind(&scope.department_id).bind(employee_id).fetch_all(pool).await?;
-    super::tool_access::check_employee_tool(pool, actor, &scope.company_id, &scope.department_id, LIST).await?;
+    super::tool_access::check_employee_tool(
+        pool,
+        actor,
+        &scope.company_id,
+        &scope.department_id,
+        LIST,
+    )
+    .await?;
     Ok(json!({"positions":rows,"limit":50}))
 }
 
@@ -82,7 +107,9 @@ impl crate::TinaApp {
         }
         #[cfg(windows)]
         {
-            let _guard = self.chat_generation.try_lock()
+            let _guard = self
+                .chat_generation
+                .try_lock()
                 .map_err(|_| TinaError::Other("já existe uma geração ativa".into()))?;
             let marker = self.owner_access.session_marker()?;
             let check_session = || {
@@ -96,38 +123,68 @@ impl crate::TinaApp {
             let installation = &self.config.installation_id;
             let initial = scope(pool, installation, employee).await?;
             let actor = context(installation, employee, &initial);
-            let can_read = match super::tool_access::check_employee_tool(pool, &actor, &initial.company_id, &initial.department_id, LIST).await {
+            let can_read = match super::tool_access::check_employee_tool(
+                pool,
+                &actor,
+                &initial.company_id,
+                &initial.department_id,
+                LIST,
+            )
+            .await
+            {
                 Ok(()) => true,
                 Err(TinaError::PermissionDenied(_)) => false,
                 Err(error) => return Err(error),
             };
             let key = self.evaluation_key()?;
-            let client = super::nvidia_evaluation::client(&self.config.nvidia.base_url, self.config.nvidia.timeout_seconds)?;
+            let client = super::nvidia_evaluation::client(
+                &self.config.nvidia.base_url,
+                self.config.nvidia.timeout_seconds,
+            )?;
             let mut messages = vec![
                 json!({"role":"system","content":"Você é um funcionário IA da Tina executando uma tarefa pontual do proprietário. Responda no seu papel e não invente ferramentas ou resultados. Não possui autoridade administrativa. Não execute ações externas. Se não houver dados, informe."}),
                 json!({"role":"user","content":format!("Nome cadastrado: {}. Cargo: {}. Tarefa do proprietário: {}",initial.name,initial.position,task)}),
             ];
-            let mut payload = json!({"model":initial.model,"messages":messages,"max_tokens":1024,"stream":false});
+            let mut payload =
+                json!({"model":initial.model,"messages":messages,"max_tokens":1024,"stream":false});
             if can_read {
                 payload["tools"] = json!([{"type":"function","function":{"name":LIST,"description":"Consulta até 50 cargos ativos do próprio departamento.","parameters":{"type":"object","properties":{},"additionalProperties":false}}}]);
                 payload["tool_choice"] = json!("auto");
             }
             check_session()?;
-            let (mut output, mut inference_ms) = super::nvidia_evaluation::complete(&client, &key, payload).await?;
+            let (mut output, mut inference_ms) =
+                super::nvidia_evaluation::complete(&client, &key, payload).await?;
             check_session()?;
             if scope(pool, installation, employee).await? != initial {
-                return Err(TinaError::Unauthorized("escopo do funcionário alterado".into()));
+                return Err(TinaError::Unauthorized(
+                    "escopo do funcionário alterado".into(),
+                ));
             }
             let mut used = None;
-            if output.pointer("/choices/0/finish_reason").and_then(Value::as_str) == Some("tool_calls") {
-                let calls = output.pointer("/choices/0/message/tool_calls").and_then(Value::as_array)
+            if output
+                .pointer("/choices/0/finish_reason")
+                .and_then(Value::as_str)
+                == Some("tool_calls")
+            {
+                let calls = output
+                    .pointer("/choices/0/message/tool_calls")
+                    .and_then(Value::as_array)
                     .ok_or_else(|| TinaError::ToolError("chamada inválida".into()))?;
-                if !can_read || calls.len() != 1 || calls[0].pointer("/function/name").and_then(Value::as_str) != Some(LIST) {
-                    return Err(TinaError::PermissionDenied("ferramenta não habilitada".into()));
+                if !can_read
+                    || calls.len() != 1
+                    || calls[0].pointer("/function/name").and_then(Value::as_str) != Some(LIST)
+                {
+                    return Err(TinaError::PermissionDenied(
+                        "ferramenta não habilitada".into(),
+                    ));
                 }
-                let id = calls[0]["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 256)
+                let id = calls[0]["id"]
+                    .as_str()
+                    .filter(|id| !id.is_empty() && id.len() <= 256)
                     .ok_or_else(|| TinaError::ToolError("identificador inválido".into()))?;
-                let args = calls[0].pointer("/function/arguments").and_then(Value::as_str)
+                let args = calls[0]
+                    .pointer("/function/arguments")
+                    .and_then(Value::as_str)
                     .filter(|s| s.len() <= 128)
                     .and_then(|s| serde_json::from_str::<Value>(s).ok())
                     .ok_or_else(|| TinaError::ToolError("argumentos inválidos".into()))?;
@@ -138,8 +195,16 @@ impl crate::TinaApp {
                     .bind(employee).bind(employee).bind(json!({"initiated_by":self.config.owner_uuid,"arguments":args,"result":result}).to_string())
                     .execute(pool).await?;
                 messages.push(json!({"role":"assistant","content":null,"tool_calls":[{"id":id,"type":"function","function":{"name":LIST,"arguments":"{}"}}]}));
-                messages.push(json!({"role":"tool","tool_call_id":id,"content":result.to_string()}));
-                super::tool_access::check_employee_tool(pool, &actor, &initial.company_id, &initial.department_id, LIST).await?;
+                messages
+                    .push(json!({"role":"tool","tool_call_id":id,"content":result.to_string()}));
+                super::tool_access::check_employee_tool(
+                    pool,
+                    &actor,
+                    &initial.company_id,
+                    &initial.department_id,
+                    LIST,
+                )
+                .await?;
                 check_session()?;
                 let (final_output, elapsed) = super::nvidia_evaluation::complete(&client, &key,
                     json!({"model":initial.model,"messages":messages,"max_tokens":1024,"stream":false})).await?;
@@ -149,23 +214,46 @@ impl crate::TinaApp {
             }
             check_session()?;
             if scope(pool, installation, employee).await? != initial {
-                return Err(TinaError::Unauthorized("escopo do funcionário alterado".into()));
+                return Err(TinaError::Unauthorized(
+                    "escopo do funcionário alterado".into(),
+                ));
             }
             if used.is_some() {
-                super::tool_access::check_employee_tool(pool, &actor, &initial.company_id, &initial.department_id, LIST).await?;
+                super::tool_access::check_employee_tool(
+                    pool,
+                    &actor,
+                    &initial.company_id,
+                    &initial.department_id,
+                    LIST,
+                )
+                .await?;
             }
-            if output.pointer("/choices/0/finish_reason").and_then(Value::as_str) != Some("stop") {
-                return Err(TinaError::Inference("resposta do funcionário incompleta".into()));
+            if output
+                .pointer("/choices/0/finish_reason")
+                .and_then(Value::as_str)
+                != Some("stop")
+            {
+                return Err(TinaError::Inference(
+                    "resposta do funcionário incompleta".into(),
+                ));
             }
-            let answer = output.pointer("/choices/0/message/content").and_then(Value::as_str)
+            let answer = output
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
                 .filter(|s| !s.trim().is_empty() && s.len() <= 32_768)
-                .ok_or_else(|| TinaError::Inference("resposta inválida".into()))?.to_owned();
+                .ok_or_else(|| TinaError::Inference("resposta inválida".into()))?
+                .to_owned();
             sqlx::query("INSERT INTO organizational_audit_events(id,installation_id,company_id,entity_type,entity_id,action,outcome,actor_type,actor_id,metadata_json) VALUES (?,?,?,'employee',?,'experimental_run','success','owner',?,?)")
                 .bind(uuid::Uuid::new_v4().to_string()).bind(installation).bind(&initial.company_id)
                 .bind(employee).bind(&self.config.owner_uuid)
                 .bind(json!({"model":initial.model,"tool":used,"inference_ms":inference_ms}).to_string())
                 .execute(pool).await?;
-            Ok(EmployeeRun { answer, model: initial.model, tool: used, inference_ms })
+            Ok(EmployeeRun {
+                answer,
+                model: initial.model,
+                tool: used,
+                inference_ms,
+            })
         }
     }
 }

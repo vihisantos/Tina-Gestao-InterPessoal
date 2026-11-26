@@ -545,7 +545,7 @@
           {#key selected}
             <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} greeting={initialGreeting} />
           {/key}
-          {#if selected && !chatBusy && !chatLoading}
+          {#if selected}
             <DepartmentProposal sessionId={selected} lastMessageId={messages.at(-1)?.id ?? ''} ondecision={(message) => { messages = [...messages.filter(m => m.id !== message.id), message]; }} />
           {/if}
           {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}

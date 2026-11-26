@@ -3,16 +3,20 @@
 
   let {
     type = 'button',
+    variant = 'primary',
+    disabled = false,
     onclick,
     children
   }: {
     type?: 'button' | 'submit' | 'reset';
+    variant?: 'primary' | 'secondary';
+    disabled?: boolean;
     onclick?: (event: MouseEvent) => void;
     children: Snippet;
   } = $props();
 </script>
 
-<button {type} {onclick}>{@render children()}</button>
+<button {type} {disabled} class:secondary={variant === 'secondary'} {onclick}>{@render children()}</button>
 
 <style>
   button {
@@ -42,5 +46,18 @@
   button:focus-visible {
     outline: 2px solid var(--tina-pink);
     outline-offset: 2px;
+  }
+
+  button.secondary {
+    background: var(--tina-surface);
+    border-color: var(--tina-border-strong);
+    color: var(--tina-text);
+    box-shadow: none;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: none;
   }
 </style>

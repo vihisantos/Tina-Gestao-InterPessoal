@@ -382,6 +382,17 @@ async fn change_tool_access(
 }
 
 #[tauri::command]
+async fn chat_cancel_proposal(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    proposal_id: String,
+) -> Result<tina::infra::chat::ChatMessage, String> {
+    app.owner_cancel_proposal(&session_id, &proposal_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_cancel(
     app: State<'_, TinaApp>,
     run: State<'_, ChatRun>,
@@ -444,6 +455,7 @@ fn main() {
             list_tool_catalog,
             list_tool_grants,
             change_tool_access,
+            chat_cancel_proposal,
             chat_cancel,
             chat_limits,
             chat_open_link,

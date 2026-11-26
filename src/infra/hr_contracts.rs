@@ -148,7 +148,7 @@ pub(super) async fn decide(
     approved: bool,
 ) -> Result<ChatMessage> {
     let (company, name, description): (String, String, String) = sqlx::query_as(
-        "SELECT company_id,name,description FROM chat_contract_drafts WHERE id=? AND installation_id=? AND session_id=? AND status='pending'"
+        "SELECT company_id,name,description FROM chat_contract_drafts WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'"
     ).bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
     if approved {
         let valid: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chat_contract_drafts a JOIN positions p ON p.id=a.position_id JOIN departments d ON d.id=p.department_id JOIN companies c ON c.id=d.company_id WHERE a.id=? AND a.installation_id=? AND c.installation_id=a.installation_id AND c.id=a.company_id AND c.name=a.company_name AND c.kind=a.organization_kind AND d.id=a.department_id AND d.name=a.department_name AND p.name=a.position_name AND c.status='active' AND d.status='active' AND p.status='active'")
@@ -170,9 +170,15 @@ pub(super) async fn decide(
         .bind(if approved {"success"} else {"denied"}).bind(owner)
         .bind(json!({"proposal_id":proposal,"session_id":session,"draft_only":true}).to_string())
         .execute(&mut *tx).await?;
-    sqlx::query("UPDATE chat_contract_drafts SET status=?,result_message_id=? WHERE id=? AND installation_id=? AND session_id=? AND status='pending'")
-        .bind(if approved {"approved"} else {"rejected"}).bind(&response.id)
+    let status = if approved { "approved" } else { "rejected" };
+    let updated = sqlx::query("UPDATE chat_contract_drafts SET status=?,lifecycle_status=?,result_message_id=?,decided_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'")
+        .bind(status).bind(status).bind(&response.id)
         .bind(proposal).bind(installation).bind(session).execute(&mut *tx).await?;
+    if updated.rows_affected() != 1 {
+        return Err(TinaError::Validation(
+            "proposta não está mais pendente; nenhuma alteração foi gravada".into(),
+        ));
+    }
     commit_owner_write(tx, installation).await?;
     Ok(response)
 }

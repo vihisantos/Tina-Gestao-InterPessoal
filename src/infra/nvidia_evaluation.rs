@@ -141,7 +141,11 @@ fn tool_passed(value: &Value) -> bool {
         .is_some_and(|args| args == json!({"id": "demo-17"}))
 }
 
-pub(super) async fn complete(client: &reqwest::Client, key: &str, payload: Value) -> Result<(Value, u64)> {
+pub(super) async fn complete(
+    client: &reqwest::Client,
+    key: &str,
+    payload: Value,
+) -> Result<(Value, u64)> {
     let started = Instant::now();
     let value = response_json(
         client

@@ -141,7 +141,7 @@ pub(super) async fn decide_position(
     proposal: &str,
     approved: bool,
 ) -> Result<ChatMessage> {
-    let p: StoredPosition = sqlx::query_as("SELECT company_id,company_name,organization_kind,department_id,department_name,name,level,description FROM chat_position_proposals WHERE id=? AND installation_id=? AND session_id=? AND status='pending'")
+    let p: StoredPosition = sqlx::query_as("SELECT company_id,company_name,organization_kind,department_id,department_name,name,level,description FROM chat_position_proposals WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'")
         .bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
     let (status, entity, content) = if approved {
         let names: Vec<String> =
@@ -183,8 +183,13 @@ pub(super) async fn decide_position(
         .bind(if approved {"success"} else {"denied"}).bind(owner)
         .bind(json!({"proposal_id":proposal,"session_id":session}).to_string()).execute(&mut *tx).await?;
     let response = assistant(&mut tx, installation, session, &content).await?;
-    sqlx::query("UPDATE chat_position_proposals SET status=?,result_message_id=? WHERE id=? AND installation_id=? AND status='pending'")
-        .bind(status).bind(&response.id).bind(proposal).bind(installation).execute(&mut *tx).await?;
+    let updated = sqlx::query("UPDATE chat_position_proposals SET status=?,lifecycle_status=?,result_message_id=?,decided_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'")
+        .bind(status).bind(status).bind(&response.id).bind(proposal).bind(installation).bind(session).execute(&mut *tx).await?;
+    if updated.rows_affected() != 1 {
+        return Err(TinaError::Validation(
+            "proposta não está mais pendente; nenhuma alteração foi gravada".into(),
+        ));
+    }
     commit_owner_write(tx, installation).await?;
     Ok(response)
 }

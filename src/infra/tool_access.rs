@@ -24,7 +24,12 @@ pub struct ToolEntry {
 pub fn catalog() -> Vec<ToolEntry> {
     [
         ("create_position", "rh", "Propor criação de cargo", true),
-        ("list_positions", "rh", "Consultar cargos do próprio departamento", true),
+        (
+            "list_positions",
+            "rh",
+            "Consultar cargos do próprio departamento",
+            true,
+        ),
         (
             "generate_contract",
             "rh",
@@ -332,7 +337,7 @@ pub(super) async fn decide(
     proposal: &str,
     approved: bool,
 ) -> Result<ChatMessage> {
-    let p: Proposal = sqlx::query_as("SELECT employee_id,employee_name,company_id,company_name,department_id,department_name,action,tool_keys FROM chat_tool_access_proposals WHERE id=? AND installation_id=? AND session_id=? AND status='pending'")
+    let p: Proposal = sqlx::query_as("SELECT employee_id,employee_name,company_id,company_name,department_id,department_name,action,tool_keys FROM chat_tool_access_proposals WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'")
         .bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
     let t = target(&mut tx, installation, &p.employee_id).await?;
     if t.company_id != p.company_id
@@ -354,8 +359,14 @@ pub(super) async fn decide(
         "Alteração recusada. Nenhum acesso foi modificado.".to_owned()
     };
     let response = assistant(&mut tx, installation, session, &content).await?;
-    sqlx::query("UPDATE chat_tool_access_proposals SET status=?,result_message_id=? WHERE id=? AND installation_id=? AND status='pending'")
-        .bind(if approved {"approved"} else {"rejected"}).bind(&response.id).bind(proposal).bind(installation).execute(&mut *tx).await?;
+    let status = if approved { "approved" } else { "rejected" };
+    let updated = sqlx::query("UPDATE chat_tool_access_proposals SET status=?,lifecycle_status=?,result_message_id=?,decided_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND installation_id=? AND session_id=? AND lifecycle_status='pending'")
+        .bind(status).bind(status).bind(&response.id).bind(proposal).bind(installation).bind(session).execute(&mut *tx).await?;
+    if updated.rows_affected() != 1 {
+        return Err(TinaError::Validation(
+            "proposta não está mais pendente; nenhuma alteração foi gravada".into(),
+        ));
+    }
     commit_owner_write(tx, installation).await?;
     Ok(response)
 }
@@ -366,7 +377,10 @@ mod tests {
 
     #[test]
     fn packages_do_not_grant_administration() {
-        assert_eq!(expand("assign_app", "rh").unwrap(), vec!["create_position", "list_positions"]);
+        assert_eq!(
+            expand("assign_app", "rh").unwrap(),
+            vec!["create_position", "list_positions"]
+        );
         assert!(expand("assign_app", "administration").is_err());
         assert!(expand("assign_tool", "assign_tool").is_err());
         assert!(expand("assign_tool", "hire_employee").is_err());

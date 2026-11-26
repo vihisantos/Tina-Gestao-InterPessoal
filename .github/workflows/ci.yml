@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           $required = @(
-            'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'LICENSING.md', '.gitignore',
+            'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'LICENSE', 'LICENSING.md', '.gitignore',
             'docs/integrity/POLICY.md', 'docs/spec/000-requisitos-funcionais.md',
             'docs/spec/out-of-scope.md', 'docs/provenance/POLICY.md', 'docs/provenance/REGISTER.md'
           )
@@ -45,13 +45,16 @@ jobs:
             }
           }
 
-      - name: No LICENSE file until the owner decides
+      - name: Proprietary license metadata consistency
         shell: pwsh
         run: |
-          foreach ($file in @('LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING')) {
-            if (Test-Path -LiteralPath $file -PathType Leaf) {
-              throw "arquivo de licenca presente ($file) antes da decisao do proprietario"
-            }
+          $root = Get-Content -Raw -LiteralPath Cargo.toml
+          $desktop = Get-Content -Raw -LiteralPath src-tauri/Cargo.toml
+          if ($root -notmatch '(?m)^license-file = "LICENSE"$' -or $desktop -notmatch '(?m)^license-file = "../LICENSE"$') {
+            throw 'metadados de licenciamento inconsistentes'
+          }
+          if ($root -match '(?m)^license\s*=' -or $desktop -match '(?m)^license\s*=') {
+            throw 'licenca SPDX conflitante com o arquivo proprietario'
           }
 
       - name: No secret-like files are tracked

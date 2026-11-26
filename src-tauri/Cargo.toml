@@ -3,6 +3,8 @@ name = "tina-desktop"
 version = "0.1.0"
 edition = "2021"
 description = "Aplicativo desktop Tina (Tauri 2)"
+license-file = "../LICENSE"
+publish = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -1,18 +1,19 @@
-# Licenciamento — PENDENTE
+# Licenciamento — proprietário, todos os direitos reservados
 
-**Nenhum direito de uso, cópia, modificação ou distribuição é concedido por este repositório no
-momento.** Todos os direitos reservados pelo proprietário.
+A Tina é disponibilizada em repositório público para consulta, não como
+software de código aberto. O material original de titularidade do projeto
+é regido pelo aviso em [LICENSE](LICENSE). Nenhuma licença geral de uso,
+modificação ou distribuição é concedida.
 
-Este projeto é privado e ainda não possui uma licença própria. A decisão sobre o regime de
-distribuição será tomada conscientemente pelo proprietário **após a auditoria de proveniência** do
-conteúdo que efetivamente existir no repositório. Até essa decisão:
+A visibilidade pública permite consulta e fork nos limites dos termos do
+GitHub. Esta política não impede tecnicamente cópias, não revoga direitos
+validamente concedidos antes e não altera as licenças de terceiros.
+A declaração MIT anterior no manifesto e no README foi removida para
+alinhar os metadados à decisão proprietária; seu eventual efeito histórico
+deve ser avaliado separadamente.
 
-- não é permitido copiar, redistribuir ou utilizar o conteúdo;
-- nenhuma licença será assumida, implícita ou explicitamente, por silêncio;
-- este arquivo será substituído pela licença escolhida quando o proprietário decidir.
-
-Notas de contexto para a decisão futura (normativas desde já):
-
-- Nenhum material de terceiros entra sem registro de origem e compatibilidade de licença.
-- Nenhuma obrigação de terceiros é ignorada ou "esquecida" por inconveniência.
-- Nenhum aviso antigo de outro projeto é transportado. As obrigações atuais estão no `NOTICE`.
+A auditoria de proveniência e de licenças de dependências continua
+obrigatória. Consulte [NOTICE](NOTICE) e o [registro de proveniência](docs/provenance/REGISTER.md).
+Nenhuma obrigação de terceiros pode ser suprimida. A identificação do titular
+e a revisão jurídica dos termos devem ser confirmadas antes da distribuição
+comercial ou do licenciamento a terceiros.

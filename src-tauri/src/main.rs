@@ -103,6 +103,19 @@ fn chat_set_key(app: State<'_, TinaApp>, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn nvidia_models(app: State<'_, TinaApp>) -> Result<Vec<String>, String> {
+    app.owner_nvidia_models().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn nvidia_evaluate_model(
+    app: State<'_, TinaApp>,
+    model: String,
+) -> Result<tina::infra::nvidia_evaluation::ModelEvaluation, String> {
+    app.owner_evaluate_nvidia_model(&model).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_has_key(app: State<'_, TinaApp>) -> Result<bool, String> {
     app.owner_has_nvidia_key().map_err(|e| e.to_string())
 }
@@ -423,6 +436,8 @@ fn main() {
             chat_open_link,
             chat_set_key,
             chat_has_key,
+            nvidia_models,
+            nvidia_evaluate_model,
             chat_delete_key,
             commands::owner_status,
             commands::create_owner_account,

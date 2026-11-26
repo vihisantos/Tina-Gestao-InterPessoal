@@ -12,6 +12,8 @@ mod employee;
 mod hierarchy;
 mod hr_tools;
 mod installation;
+/// Catálogo e testes sintéticos NVIDIA.
+pub mod nvidia_evaluation;
 mod position;
 mod redis;
 mod telemetry;

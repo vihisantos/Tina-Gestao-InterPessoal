@@ -104,11 +104,25 @@ pub(super) async fn propose(
             && d.to_lowercase() == a.department_name.to_lowercase()
             && p.to_lowercase() == a.position_name.to_lowercase()
     });
-    let Some((company_id, company_name, department_id, department_name, position_id, position_name)) = matches.next() else {
+    let Some((
+        company_id,
+        company_name,
+        department_id,
+        department_name,
+        position_id,
+        position_name,
+    )) = matches.next()
+    else {
         return assistant(tx, installation, session, "Não encontrei o cargo ativo. Precisamos identificar o destino antes de preparar o contrato.").await;
     };
     if matches.next().is_some() {
-        return assistant(tx, installation, session, "O destino é ambíguo. Precisamos identificar o cargo exato.").await;
+        return assistant(
+            tx,
+            installation,
+            session,
+            "O destino é ambíguo. Precisamos identificar o cargo exato.",
+        )
+        .await;
     }
     let description = format!(
         "Minuta operacional — versão 1\nDepartamento: {department_name}\nCargo: {position_name}\nPersonalidade: {}\nEspecialidade: {}\nResponsabilidades: {}\nObjetivos: {}\nSupervisão proposta: {}\nLimites e dados: {}\nFerramentas solicitadas (não concedidas): {}\nOrçamento proposto: {}\nRevisão: {}\nModelo: pendente de avaliação. Nenhum funcionário será ativado.",
@@ -133,18 +147,20 @@ pub(super) async fn decide(
     proposal: &str,
     approved: bool,
 ) -> Result<ChatMessage> {
-    let (company, name): (String, String) = sqlx::query_as(
-        "SELECT company_id,name FROM chat_contract_drafts WHERE id=? AND installation_id=? AND session_id=? AND status='pending'"
+    let (company, name, description): (String, String, String) = sqlx::query_as(
+        "SELECT company_id,name,description FROM chat_contract_drafts WHERE id=? AND installation_id=? AND session_id=? AND status='pending'"
     ).bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
     if approved {
         let valid: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chat_contract_drafts a JOIN positions p ON p.id=a.position_id JOIN departments d ON d.id=p.department_id JOIN companies c ON c.id=d.company_id WHERE a.id=? AND a.installation_id=? AND c.installation_id=a.installation_id AND c.id=a.company_id AND c.name=a.company_name AND c.kind=a.organization_kind AND d.id=a.department_id AND d.name=a.department_name AND p.name=a.position_name AND c.status='active' AND d.status='active' AND p.status='active'")
             .bind(proposal).bind(installation).fetch_one(&mut *tx).await?;
         if valid != 1 {
-            return Err(TinaError::Validation("destino alterado ou indisponível".into()));
+            return Err(TinaError::Validation(
+                "destino alterado ou indisponível".into(),
+            ));
         }
     }
     let content = if approved {
-        format!("Minuta de contrato salva para {name}. Ainda falta avaliar e selecionar o modelo e autorizar a contratação. Nenhuma ferramenta foi concedida.")
+        format!("Minuta de contrato salva para {name} (referência: {proposal}). Ainda falta avaliar e selecionar o modelo e autorizar a contratação. Nenhuma ferramenta foi concedida.\n\n{description}")
     } else {
         "Minuta recusada. Nenhum agente foi contratado.".to_owned()
     };

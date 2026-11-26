@@ -9,16 +9,26 @@ const BASE: &str = "https://integrate.api.nvidia.com/v1";
 const SUITE: &str = "tina-synthetic-v1";
 const LIMIT: usize = 1024 * 1024;
 
+/// Resultado observado em uma suíte sintética, não uma certificação de contratação.
 #[derive(Debug, Serialize)]
 pub struct ModelEvaluation {
+    /// Identificador do modelo avaliado.
     pub model: String,
+    /// Versão da suíte sintética.
     pub suite: String,
+    /// Data e hora UTC da conclusão.
     pub observed_at: String,
+    /// Resultado do teste de aritmética.
     pub arithmetic_passed: bool,
+    /// Resultado da chamada simulada, sem execução externa.
     pub tool_call_passed: bool,
+    /// Latência total do teste de aritmética, em milissegundos.
     pub arithmetic_ms: u64,
+    /// Latência total do teste de ferramenta, em milissegundos.
     pub tool_call_ms: u64,
+    /// Total informado pelo provedor, quando disponível.
     pub total_tokens: Option<u64>,
+    /// Custo monetário, desconhecido nesta versão.
     pub cost: Option<f64>,
 }
 
@@ -95,21 +105,33 @@ async fn list_models(client: &reqwest::Client, key: &str) -> Result<Vec<String>>
 }
 
 fn arithmetic_passed(value: &Value) -> bool {
-    value.pointer("/choices/0/message/content")
+    value
+        .pointer("/choices/0/message/content")
         .and_then(Value::as_str)
         .is_some_and(|text| text.trim() == "42")
-        && value.pointer("/choices/0/finish_reason").and_then(Value::as_str) == Some("stop")
+        && value
+            .pointer("/choices/0/finish_reason")
+            .and_then(Value::as_str)
+            == Some("stop")
 }
 
 fn tool_passed(value: &Value) -> bool {
-    if value.pointer("/choices/0/finish_reason").and_then(Value::as_str) != Some("tool_calls") {
+    if value
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str)
+        != Some("tool_calls")
+    {
         return false;
     }
-    let Some(calls) = value.pointer("/choices/0/message/tool_calls").and_then(Value::as_array)
+    let Some(calls) = value
+        .pointer("/choices/0/message/tool_calls")
+        .and_then(Value::as_array)
     else {
         return false;
     };
-    if calls.len() != 1 || calls[0].pointer("/function/name").and_then(Value::as_str) != Some("lookup_demo") {
+    if calls.len() != 1
+        || calls[0].pointer("/function/name").and_then(Value::as_str) != Some("lookup_demo")
+    {
         return false;
     }
     calls[0]
@@ -119,11 +141,7 @@ fn tool_passed(value: &Value) -> bool {
         .is_some_and(|args| args == json!({"id": "demo-17"}))
 }
 
-async fn complete(
-    client: &reqwest::Client,
-    key: &str,
-    payload: Value,
-) -> Result<(Value, u64)> {
+async fn complete(client: &reqwest::Client, key: &str, payload: Value) -> Result<(Value, u64)> {
     let started = Instant::now();
     let value = response_json(
         client
@@ -160,7 +178,10 @@ impl crate::TinaApp {
         {
             let marker = self.owner_access.session_marker()?;
             let key = self.evaluation_key()?;
-            let client = client(&self.config.nvidia.base_url, self.config.nvidia.timeout_seconds)?;
+            let client = client(
+                &self.config.nvidia.base_url,
+                self.config.nvidia.timeout_seconds,
+            )?;
             let models = list_models(&client, &key).await?;
             self.require_owner(Operation::Read)?;
             if marker != self.owner_access.session_marker()? {
@@ -181,7 +202,9 @@ impl crate::TinaApp {
         }
         #[cfg(windows)]
         {
-            let _guard = self.chat_generation.try_lock()
+            let _guard = self
+                .chat_generation
+                .try_lock()
                 .map_err(|_| TinaError::Other("já existe uma geração ativa".into()))?;
             let marker = self.owner_access.session_marker()?;
             let check_session = || {
@@ -192,11 +215,16 @@ impl crate::TinaApp {
                 Ok(())
             };
             let key = self.evaluation_key()?;
-            let client = client(&self.config.nvidia.base_url, self.config.nvidia.timeout_seconds)?;
+            let client = client(
+                &self.config.nvidia.base_url,
+                self.config.nvidia.timeout_seconds,
+            )?;
             let models = list_models(&client, &key).await?;
             check_session()?;
             if !models.iter().any(|id| id == model) {
-                return Err(TinaError::Validation("modelo ausente do catálogo NVIDIA".into()));
+                return Err(TinaError::Validation(
+                    "modelo ausente do catálogo NVIDIA".into(),
+                ));
             }
             let (arithmetic, arithmetic_ms) = complete(&client, &key, json!({
                 "model": model,
@@ -212,9 +240,11 @@ impl crate::TinaApp {
                 "tool_choice":"auto"
             })).await?;
             check_session()?;
-            let total_tokens = arithmetic.pointer("/usage/total_tokens").and_then(Value::as_u64)
+            let total_tokens = arithmetic
+                .pointer("/usage/total_tokens")
+                .and_then(Value::as_u64)
                 .zip(tool.pointer("/usage/total_tokens").and_then(Value::as_u64))
-                .and_then(|(a,b)| a.checked_add(b));
+                .and_then(|(a, b)| a.checked_add(b));
             Ok(ModelEvaluation {
                 model: model.to_owned(),
                 suite: SUITE.to_owned(),
@@ -246,10 +276,20 @@ mod tests {
 
     #[test]
     fn scores_observed_responses_not_claims() {
-        assert!(!arithmetic_passed(&json!({"choices":[{"message":{"content":"42"},"finish_reason":"length"}]})));
-        assert!(arithmetic_passed(&json!({"choices":[{"message":{"content":"42"},"finish_reason":"stop"}]})));
-        assert!(!tool_passed(&json!({"choices":[{"message":{"content":"I called it"},"finish_reason":"stop"}]})));
-        assert!(tool_passed(&json!({"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"lookup_demo","arguments":"{\"id\":\"demo-17\"}"}}]}}]})));
-        assert!(!tool_passed(&json!({"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"lookup_demo","arguments":"{\"id\":\"wrong\"}"}}]}}]})));
+        assert!(!arithmetic_passed(
+            &json!({"choices":[{"message":{"content":"42"},"finish_reason":"length"}]})
+        ));
+        assert!(arithmetic_passed(
+            &json!({"choices":[{"message":{"content":"42"},"finish_reason":"stop"}]})
+        ));
+        assert!(!tool_passed(
+            &json!({"choices":[{"message":{"content":"I called it"},"finish_reason":"stop"}]})
+        ));
+        assert!(tool_passed(
+            &json!({"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"lookup_demo","arguments":"{\"id\":\"demo-17\"}"}}]}}]})
+        ));
+        assert!(!tool_passed(
+            &json!({"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"lookup_demo","arguments":"{\"id\":\"wrong\"}"}}]}}]})
+        ));
     }
 }

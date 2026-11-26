@@ -81,7 +81,7 @@
         {:else}<span>Exclusiva da administração central</span>{/if}
       </div>
     {/each}
-    {#if selectedApp === 'rh'}<p>Contrato, avaliação de modelos e contratação: em desenvolvimento; ainda não atribuíveis.</p>{/if}
+    {#if selectedApp === 'rh'}<p>Minuta de contrato disponível na Tina Central. Avaliação sintética NVIDIA no backend; contratação e execução por funcionários ainda não disponíveis.</p>{/if}
   {/if}
   <button type="button" disabled={busy || loading} onclick={refresh}>Atualizar</button>
 </Card>

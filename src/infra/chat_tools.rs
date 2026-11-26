@@ -213,7 +213,8 @@ pub(crate) async fn propose(
         return Ok(response);
     }
     if name == "generate_contract" {
-        let response = super::hr_contracts::propose(&mut tx, installation, session, user, arguments).await?;
+        let response =
+            super::hr_contracts::propose(&mut tx, installation, session, user, arguments).await?;
         tx.commit().await?;
         return Ok(response);
     }
@@ -373,7 +374,8 @@ pub(crate) async fn decide(
             .await;
     }
     if p.tool_name == "generate_contract" {
-        return super::hr_contracts::decide(tx, installation, owner, session, proposal, approved).await;
+        return super::hr_contracts::decide(tx, installation, owner, session, proposal, approved)
+            .await;
     }
     if p.tool_name == "create_position" {
         return super::hr_tools::decide_position(

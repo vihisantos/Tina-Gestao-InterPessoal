@@ -24,7 +24,12 @@ pub struct ToolEntry {
 pub fn catalog() -> Vec<ToolEntry> {
     [
         ("create_position", "rh", "Propor criação de cargo", true),
-        ("generate_contract", "rh", "Preparar minuta de contrato", false),
+        (
+            "generate_contract",
+            "rh",
+            "Preparar minuta de contrato",
+            false,
+        ),
         (
             "create_organization",
             "organization",

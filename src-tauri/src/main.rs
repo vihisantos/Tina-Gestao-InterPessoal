@@ -112,7 +112,9 @@ async fn nvidia_evaluate_model(
     app: State<'_, TinaApp>,
     model: String,
 ) -> Result<tina::infra::nvidia_evaluation::ModelEvaluation, String> {
-    app.owner_evaluate_nvidia_model(&model).await.map_err(|e| e.to_string())
+    app.owner_evaluate_nvidia_model(&model)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

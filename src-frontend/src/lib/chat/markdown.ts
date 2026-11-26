@@ -17,12 +17,14 @@ type FenceEnv = {
 
 const markdown = new MarkdownIt({
   html: false,
-  linkify: false,
+  linkify: true,
   breaks: false,
   typographer: false
 });
 
 markdown.disable(['html_block', 'html_inline']);
+// Reconhecer URLs explícitas sem transformar domínios soltos ou e-mails em links.
+markdown.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
 
 type Purifier = ReturnType<typeof DOMPurify>;
 

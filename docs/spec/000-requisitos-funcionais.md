@@ -120,6 +120,9 @@ parâmetros relevantes e quais saídas produziram, por delegação.
 **R-7.3** Histórico e resultados: delegante, delegado e superiores na hierarquia consultam o
 resultado de qualquer delegação que atravessou suas instâncias; o proprietário consulta todas.
 
+**R-7.4** Aplicativos de ferramentas: ferramentas reais são agrupadas em aplicativos; o proprietário e a Tina, dentro da autoridade concedida, podem atribuir ou revogar pacotes ou ferramentas individuais de funcionários. Nenhum cargo concede acesso automaticamente.
+*Aceite:* a aba Tools mostra catálogo, atribuições e revogações; o backend verifica a identidade, o escopo organizacional e o acesso a cada execução. Ferramentas administrativas e operações sensíveis preservam a autorização do proprietário. Pacotes novos não ampliam concessões antigas silenciosamente.
+
 ## R-8. Controle de execução (pausa, interrupção, cancelamento)
 
 **R-8.1** Todo agente em execução de delegação pode ser **pausado** pelo proprietário ou por

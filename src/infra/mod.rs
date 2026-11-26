@@ -15,6 +15,8 @@ mod installation;
 mod position;
 mod redis;
 mod telemetry;
+/// Catálogo de aplicativos e controle de ferramentas por funcionário.
+pub mod tool_access;
 
 pub(crate) use audit::begin_owner_write;
 pub(crate) use audit::commit_owner_write;

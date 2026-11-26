@@ -11,6 +11,7 @@
   import PersonnelDirectory from '$lib/components/PersonnelDirectory.svelte';
   import DepartmentProposal from '$lib/components/DepartmentProposal.svelte';
   import OrganizationDirectory from '$lib/components/OrganizationDirectory.svelte';
+  import ToolsDirectory from '$lib/components/ToolsDirectory.svelte';
 
   type BootstrapInfo = {
     version: string;
@@ -58,7 +59,7 @@
   let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
   let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
   let chatLimits = $state<ChatLimits>({ maxUserMessageBytes: 4032 });
-  let view = $state<'chat' | 'pessoal' | 'organizations'>('chat');
+  let view = $state<'chat' | 'pessoal' | 'organizations' | 'tools'>('chat');
   let initialGreeting = $derived.by(() => {
     const name = ownerStatus?.displayName?.trim();
     return name
@@ -507,6 +508,7 @@
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class:active={view === 'chat'} aria-current={view === 'chat' ? 'page' : undefined} onclick={() => (view = 'chat')}>Chat</button>
         <button type="button" class:active={view === 'organizations'} aria-current={view === 'organizations' ? 'page' : undefined} onclick={() => (view = 'organizations')}>Organizações</button>
+        <button type="button" class:active={view === 'tools'} aria-current={view === 'tools' ? 'page' : undefined} onclick={() => (view = 'tools')}>Tools</button>
         <button type="button" class:active={view === 'pessoal'} aria-current={view === 'pessoal' ? 'page' : undefined} onclick={() => (view = 'pessoal')}>Pessoal</button>
       </nav>
 
@@ -555,6 +557,8 @@
       </section>
       {:else if view === 'organizations'}
         <OrganizationDirectory />
+      {:else if view === 'tools'}
+        <ToolsDirectory />
       {:else}
         <section class="pessoal-shell" aria-label="Pessoal">
           <PersonnelDirectory />
@@ -607,7 +611,7 @@
 
 <style>
   .workspace { display: flex; flex-direction: column; gap: 1rem; }
-  .app-nav { display: inline-flex; gap: .5rem; align-self: flex-start; padding: .3rem; border: 1px solid var(--tina-border); border-radius: var(--tina-radius-pill); background: var(--tina-surface-tint); }
+  .app-nav { display: inline-flex; flex-wrap: wrap; gap: .5rem; align-self: flex-start; padding: .3rem; border: 1px solid var(--tina-border); border-radius: var(--tina-radius-pill); background: var(--tina-surface-tint); }
   .app-nav button { border: 0; background: transparent; color: var(--tina-text-muted); padding: .55rem .95rem; border-radius: var(--tina-radius-pill); font: inherit; font-weight: 600; cursor: pointer; }
   .app-nav button.active { background: #fff; color: var(--tina-pink-deep); box-shadow: 0 1px 0 rgba(0,0,0,.02); }
   .app-nav button:focus-visible { outline: 2px solid var(--tina-pink); outline-offset: 2px; }

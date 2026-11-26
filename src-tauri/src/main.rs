@@ -330,6 +330,26 @@ async fn chat_decide_department(
 }
 
 #[tauri::command]
+fn list_tool_catalog(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::tool_access::ToolEntry>, String> {
+    app.owner_tool_catalog().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_tool_grants(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::tool_access::ToolGrant>, String> {
+    app.owner_tool_grants().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn change_tool_access(
+    app: State<'_, TinaApp>,
+    employee_id: String,
+    action: String,
+    key: String,
+) -> Result<(), String> {
+    app.owner_change_tool_access(&employee_id, &action, &key).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_cancel(
     app: State<'_, TinaApp>,
     run: State<'_, ChatRun>,
@@ -389,6 +409,9 @@ fn main() {
             chat_generate,
             chat_pending_department,
             chat_decide_department,
+            list_tool_catalog,
+            list_tool_grants,
+            change_tool_access,
             chat_cancel,
             chat_limits,
             chat_open_link,

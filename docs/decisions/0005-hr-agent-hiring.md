@@ -25,3 +25,7 @@ A Tina deve tratar contratação como um processo, não como um cadastro isolado
 ## Validação
 
 Testar iniciativa sem comando literal, cargo sem aprovação, aprovação e recusa, repetição, duplicidade, escopo e departamento arquivado. Antes de liberar contratação, testar catálogo indisponível, ausência de evidências, modelos incompatíveis, custo desconhecido, persistência atômica e ausência de privilégios implícitos. Validação nativa Windows e NVIDIA permanece necessária.
+
+## Aplicativos e ferramentas atribuíveis (decisão posterior)
+
+A Skill ensina o procedimento de RH; ferramentas executam operações; aplicativos agrupam ferramentas disponíveis. Nesta etapa, RH inclui create_position. Ferramentas de criação de organização/departamento e administração de acessos permanecem centrais. Concessão de pacote é uma fotografia das ferramentas delegáveis no momento da autorização; revogar uma ferramenta remove seu acesso mesmo se recebida pelo pacote. Uma concessão é limitada ao funcionário, organização e departamento; mudança de escopo invalida o acesso anterior. A Tina pode iniciar propostas de atribuição ou revogação; nesta fase a confirmação é do proprietário. O backend nega por padrão e não concede autoridade administrativa. O executor de funcionários ainda não está integrado: a concessão representa acesso configurado, não uma ação executada por um agente. Antes de habilitar a execução por funcionários, o dispatcher deve aplicar o verificador de acesso e a política específica da ação a cada chamada. Contrato e avaliação reais de modelos permanecem pendentes.

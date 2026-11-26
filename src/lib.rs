@@ -257,6 +257,38 @@ impl TinaApp {
         Ok(entries)
     }
 
+    /// Lista aplicativos e ferramentas registradas, sem anunciar implementações futuras.
+    pub fn owner_tool_catalog(&self) -> Result<Vec<infra::tool_access::ToolEntry>> {
+        self.require_owner(Operation::Read)?;
+        Ok(infra::tool_access::catalog())
+    }
+
+    /// Consulta as atribuições de ferramentas desta instalação.
+    pub async fn owner_tool_grants(&self) -> Result<Vec<infra::tool_access::ToolGrant>> {
+        self.require_owner(Operation::Read)?;
+        let rows = infra::tool_access::list(self.database.pool(), &self.config.installation_id).await?;
+        self.require_owner(Operation::Read)?;
+        Ok(rows)
+    }
+
+    /// Concede ou revoga uma ferramenta ou um aplicativo a um funcionário autenticado na instalação.
+    pub async fn owner_change_tool_access(
+        &self,
+        employee_id: &str,
+        action: &str,
+        key: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::ManagePermissions)?;
+        infra::tool_access::change(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            employee_id,
+            action,
+            key,
+        ).await
+    }
+
     /// Armazena a chave NVIDIA no cofre nativo apÃƒÂ³s autorizaÃƒÂ§ÃƒÂ£o.
     pub fn owner_set_nvidia_key(&self, key: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;

@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import EmployeeSpace from '../src/lib/components/EmployeeSpace.svelte';
 
 const employees = [
-  { id: 'a', name: 'Álvaro Dias', position: 'Analista', department: 'Operações', company: 'Empresa A', active: true },
-  { id: 'b', name: 'Beatriz Lima', position: 'Gerente', department: 'Financeiro', company: 'Empresa A', active: false },
-  { id: 'c', name: 'Caio Souza', position: 'Analista', department: 'Operações', company: 'Empresa B', active: true }
+  { id: 'a', companyId: 'co-a', departmentId: 'dep-a', positionId: 'pos-a', name: 'Álvaro Dias', position: 'Analista', department: 'Operações', company: 'Empresa A', active: true },
+  { id: 'b', companyId: 'co-a', departmentId: 'dep-b', positionId: 'pos-b', name: 'Beatriz Lima', position: 'Gerente', department: 'Financeiro', company: 'Empresa A', active: false },
+  { id: 'c', companyId: 'co-b', departmentId: 'dep-c', positionId: 'pos-c', name: 'Caio Souza', position: 'Analista', department: 'Operações', company: 'Empresa B', active: true }
 ];
 
 describe('EmployeeSpace', () => {
@@ -18,6 +18,12 @@ describe('EmployeeSpace', () => {
     expect(view.getByRole('status').textContent).toContain('3 de 3');
   });
 
+  it('mantém departamentos com nomes iguais separados por identidade', () => {
+    const rows = [employees[0], { ...employees[2], companyId: 'co-a', company: 'Empresa A' }];
+    const view = render(EmployeeSpace, { props: { employees: rows } });
+    expect(view.getAllByRole('heading', { name: 'Operações' })).toHaveLength(2);
+  });
+
   it('busca sem distinguir acentos ou maiúsculas', async () => {
     const view = render(EmployeeSpace, { props: { employees } });
     await fireEvent.input(view.getByRole('searchbox', { name: 'Buscar' }), { target: { value: 'ALVARO' } });
@@ -28,7 +34,7 @@ describe('EmployeeSpace', () => {
 
   it('combina filtros de empresa e status', async () => {
     const view = render(EmployeeSpace, { props: { employees } });
-    await fireEvent.change(view.getByRole('combobox', { name: 'Empresa' }), { target: { value: 'Empresa A' } });
+    await fireEvent.change(view.getByRole('combobox', { name: 'Empresa' }), { target: { value: 'co-a' } });
     await fireEvent.change(view.getByRole('combobox', { name: 'Status' }), { target: { value: 'inactive' } });
     expect(view.getByRole('heading', { name: 'Beatriz Lima' })).toBeTruthy();
     expect(view.queryByRole('heading', { name: 'Álvaro Dias' })).toBeNull();

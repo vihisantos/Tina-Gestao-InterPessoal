@@ -76,6 +76,17 @@ fn get_installation_id(state: &TinaApp) -> String {
     state.config().installation_id.clone()
 }
 
+/// Diretório de pessoal: não aceita IDs de instalação ou empresa do frontend.
+#[tauri::command]
+pub async fn list_employee_directory(
+    state: State<'_, TinaApp>,
+) -> Result<Vec<tina::infra::EmployeeDirectoryEntry>, String> {
+    state
+        .owner_employee_directory()
+        .await
+        .map_err(|_| "Não foi possível consultar os funcionários.".to_string())
+}
+
 /// Cria um novo funcionário associado a um cargo existente da instalação (com auditoria de autoria transacional)
 #[tauri::command]
 pub async fn create_employee(

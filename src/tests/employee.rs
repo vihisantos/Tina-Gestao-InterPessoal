@@ -1229,3 +1229,63 @@ async fn test_employee_status_is_active_consistency() {
 
     cleanup_test_db(&path);
 }
+
+#[tokio::test]
+async fn employee_directory_is_scoped_and_includes_inactive() {
+    let (db, path) = setup_test_db("directory").await;
+    let (installation, company, department, position) = setup_organization(&db).await;
+    let repo = EmployeeRepository::new(db.pool());
+    let employee = repo
+        .create(&position, "Pessoa local", Some("Responsabilidade"), None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE employees SET status = 'inactive', is_active = 0, deactivated_at = datetime('now') WHERE id = ?")
+        .bind(&employee.id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+    let other = InstallationRepository::new(db.pool())
+        .create("Outra instalação", "other-directory-owner")
+        .await
+        .unwrap();
+    let other_company = CompanyRepository::new(db.pool())
+        .create(&other.id, "Outra empresa")
+        .await
+        .unwrap();
+    let other_department = DepartmentRepository::new(db.pool())
+        .create(&other_company.id, "DIR", "Outro departamento", None)
+        .await
+        .unwrap();
+    let other_position = PositionRepository::new(db.pool())
+        .create(&other_department.id, "Outro cargo", 1, 1, None)
+        .await
+        .unwrap();
+    repo.create(&other_position.id, "Pessoa externa", None, None)
+        .await
+        .unwrap();
+
+    let rows = repo.list_directory(&installation).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, employee.id);
+    assert_eq!(rows[0].company_id, company);
+    assert_eq!(rows[0].department_id, department);
+    assert_eq!(rows[0].position_id, position);
+    assert!(!rows[0].active);
+    assert_eq!(
+        rows[0].responsibilities.as_deref(),
+        Some("Responsabilidade")
+    );
+    db.pool().close().await;
+    cleanup_test_db(&path);
+}
+
+#[tokio::test]
+async fn employee_directory_requires_owner_session() {
+    let path = std::env::temp_dir().join(format!("tina-directory-{}.db", uuid::Uuid::new_v4()));
+    let app = crate::TinaApp::initialize_at(&path, "directory-install", "directory-owner")
+        .await
+        .unwrap();
+    assert!(app.owner_employee_directory().await.is_err());
+    drop(app);
+    let _ = std::fs::remove_file(path);
+}

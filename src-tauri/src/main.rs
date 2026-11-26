@@ -392,6 +392,7 @@ fn main() {
             commands::archive_position,
             commands::create_employee,
             commands::get_employee,
+            commands::list_employee_directory,
             commands::list_employees_by_company,
             commands::list_employees_by_department,
             commands::update_employee,

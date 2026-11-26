@@ -8,6 +8,7 @@
   import ChatHistory from '$lib/components/ChatHistory.svelte';
   import ChatComposer from '$lib/components/ChatComposer.svelte';
   import Logo from '$lib/components/Logo.svelte';
+  import PersonnelDirectory from '$lib/components/PersonnelDirectory.svelte';
 
   type BootstrapInfo = {
     version: string;
@@ -548,10 +549,7 @@
       </section>
       {:else}
         <section class="pessoal-shell" aria-label="Pessoal">
-          <Card title="Pessoal">
-            <p>Este espaço reunirá conversas e contexto pessoal quando os módulos correspondentes estiverem disponíveis.</p>
-            <p class="detail">Por enquanto, a Tina não inventa atividades nem cria dados fictícios. Use o Chat para conversar com a Tina e acompanhar o que já existe na instalação.</p>
-          </Card>
+          <PersonnelDirectory />
         </section>
       {/if}
     </section>

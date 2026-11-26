@@ -51,6 +51,34 @@ impl From<EmployeeRow> for Employee {
     }
 }
 
+/// Registro de leitura do diretório de pessoal, sem credenciais ou configuração de modelo.
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmployeeDirectoryEntry {
+    /// Identidade estável do funcionário.
+    pub id: String,
+    /// Nome cadastrado.
+    pub name: String,
+    /// Identidade do cargo.
+    pub position_id: String,
+    /// Nome do cargo.
+    pub position: String,
+    /// Identidade do departamento.
+    pub department_id: String,
+    /// Nome do departamento.
+    pub department: String,
+    /// Identidade da empresa.
+    pub company_id: String,
+    /// Nome da empresa.
+    pub company: String,
+    /// Estado cadastral do funcionário.
+    pub active: bool,
+    /// Nome do superior direto na mesma empresa, se existente.
+    pub supervisor: Option<String>,
+    /// Responsabilidades cadastradas.
+    pub responsibilities: Option<String>,
+}
+
 /// Repositório para operações de funcionário
 pub struct EmployeeRepository<'a> {
     pool: &'a SqlitePool,
@@ -60,6 +88,35 @@ impl<'a> EmployeeRepository<'a> {
     /// Cria um novo repositório de funcionários
     pub(crate) fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
+    }
+
+    /// Lista funcionários ativos e inativos exclusivamente na instalação informada.
+    pub(crate) async fn list_directory(
+        &self,
+        installation_id: &str,
+    ) -> Result<Vec<EmployeeDirectoryEntry>> {
+        let entries = sqlx::query_as::<_, EmployeeDirectoryEntry>(
+            r#"
+            SELECT e.id, e.name, p.id AS position_id, p.name AS position,
+                   d.id AS department_id, d.name AS department,
+                   c.id AS company_id, c.name AS company,
+                   e.status = 'active' AS active, e.responsibilities,
+                   CASE WHEN sd.company_id = c.id THEN s.name END AS supervisor
+            FROM employees e
+            JOIN positions p ON p.id = e.position_id
+            JOIN departments d ON d.id = p.department_id
+            JOIN companies c ON c.id = d.company_id
+            LEFT JOIN employees s ON s.id = e.supervisor_id
+            LEFT JOIN positions sp ON sp.id = s.position_id
+            LEFT JOIN departments sd ON sd.id = sp.department_id
+            WHERE c.installation_id = ?
+            ORDER BY c.name, c.id, d.name, d.id, e.name, e.id
+            "#,
+        )
+        .bind(installation_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(entries)
     }
 
     /// Cria um novo funcionário associado a um cargo existente.

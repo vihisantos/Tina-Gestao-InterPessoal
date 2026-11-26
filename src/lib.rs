@@ -246,6 +246,17 @@ impl TinaApp {
         })
     }
 
+    /// Consulta o diretório de pessoal da instalação autenticada, somente leitura.
+    pub async fn owner_employee_directory(&self) -> Result<Vec<infra::EmployeeDirectoryEntry>> {
+        let db = self.owner_database(Operation::Read)?;
+        let entries = db
+            .employees()
+            .list_directory(&self.config.installation_id)
+            .await?;
+        self.require_owner(Operation::Read)?;
+        Ok(entries)
+    }
+
     /// Armazena a chave NVIDIA no cofre nativo apÃƒÂ³s autorizaÃƒÂ§ÃƒÂ£o.
     pub fn owner_set_nvidia_key(&self, key: &str) -> Result<()> {
         self.require_owner(Operation::Write)?;

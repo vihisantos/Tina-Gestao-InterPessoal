@@ -1,4 +1,5 @@
-# CI por responsabilidade. Formatação, governança e frontend rodam em paralelo.
+# CI Windows em executor próprio dedicado, sem processamento hospedado.
+# O executor deve operar em conta Windows isolada e sem privilégios administrativos.
 # A compilação Rust depende da formatação; testes dependem da compilação.
 # Pull requests empilhados também são validados nas respectivas branches-base.
 name: ci
@@ -15,12 +16,17 @@ permissions:
 jobs:
   governance:
     name: governance checks
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Required governance files exist and are non-empty
+        shell: bash
         run: |
           set -euo pipefail
           for f in README.md CONTRIBUTING.md SECURITY.md NOTICE LICENSING.md .gitignore \
@@ -33,6 +39,7 @@ jobs:
           done
 
       - name: No LICENSE file until the owner decides
+        shell: bash
         run: |
           set -euo pipefail
           for f in LICENSE LICENSE.md LICENSE.txt COPYING; do
@@ -43,6 +50,7 @@ jobs:
           done
 
       - name: No secret-like files are tracked
+        shell: bash
         run: |
           set -euo pipefail
           bad=$(git ls-files | grep -E '(^|/)(\.env(\..+)?|.+\.(pem|key|ppk|p12|pfx|jks|keystore))$' || true)
@@ -53,6 +61,7 @@ jobs:
           fi
 
       - name: Secret-like content scan (tracked and staged)
+        shell: bash
         run: |
           set -euo pipefail
           hits=0
@@ -66,51 +75,67 @@ jobs:
 
   rust-format:
     name: Rust formatting
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Install rustfmt
-        run: rustup component add rustfmt
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup component add rustfmt --toolchain stable
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo +stable fmt --all -- --check
 
   rust-check:
     name: Rust and Tauri compilation (Windows)
     needs: rust-format
-    runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Install stable Rust
         run: |
           rustup toolchain install stable --profile minimal
-          rustup default stable
       - name: Check workspace
-        run: cargo check --workspace --locked
+        run: cargo +stable check --workspace --locked
 
   rust-tests:
     name: Rust and Tauri tests (Windows)
     needs: rust-check
-    runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Install stable Rust
         run: |
           rustup toolchain install stable --profile minimal
-          rustup default stable
       - name: Run workspace tests
-        run: cargo test --workspace --locked
+        run: cargo +stable test --workspace --locked
       - name: Windows Credential Manager integration smoke
-        run: cargo test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
+        run: cargo +stable test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
 
   frontend:
     name: Svelte frontend validation
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, tina-ci-isolated]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install Node dependencies
         run: npm ci

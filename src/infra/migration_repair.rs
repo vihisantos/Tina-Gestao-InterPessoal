@@ -423,7 +423,15 @@ mod tests {
     fn plano_aceita_apenas_variante_lf_crlf() {
         let migrator = sqlx::migrate!("./migration");
         let m = migrator.iter().find(|m| m.version == 2).unwrap();
-        let crlf = m.sql.replace("\r\n", "\n").replace('\n', "\r\n");
+        let lf = m.sql.replace("\r\n", "\n");
+        let crlf = lf.replace('\n', "\r\n");
+        let lf_sum = checksum_for_sql(
+            m.version,
+            m.description.clone(),
+            m.migration_type,
+            m.no_tx,
+            &lf,
+        );
         let crlf_sum = checksum_for_sql(
             m.version,
             m.description.clone(),
@@ -431,8 +439,21 @@ mod tests {
             m.no_tx,
             &crlf,
         );
+        assert_ne!(lf_sum, crlf_sum);
+        // The fixture must differ from the embedded SQL on either checkout.
+        let alternate = if m.checksum.as_ref() == crlf_sum.as_slice() {
+            lf_sum
+        } else {
+            crlf_sum
+        };
+        assert_ne!(alternate.as_slice(), m.checksum.as_ref());
+        assert!(
+            plan_repairs(&[(m.version, m.checksum.to_vec(), true)], &migrator)
+                .unwrap()
+                .is_empty()
+        );
 
-        let plan = plan_repairs(&[(m.version, crlf_sum, true)], &migrator).unwrap();
+        let plan = plan_repairs(&[(m.version, alternate, true)], &migrator).unwrap();
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].0, m.version);
         assert_eq!(plan[0].1, m.checksum.as_ref());

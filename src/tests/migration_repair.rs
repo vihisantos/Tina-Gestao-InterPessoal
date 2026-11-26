@@ -85,14 +85,25 @@ async fn startup_nunca_repara_e_ferramenta_explicita_preserva_dados_e_backup() {
         .iter()
         .find(|m| m.version == 2)
         .expect("migration 2 existe");
-    let crlf_sql = m.sql.replace("\r\n", "\n").replace('\n', "\r\n");
+    let lf_sql = m.sql.replace("\r\n", "\n");
+    let crlf_sql = lf_sql.replace('\n', "\r\n");
+    let lf_checksum = checksum_of(m.version, m.description.clone(), lf_sql);
     let crlf_checksum = checksum_of(m.version, m.description.clone(), crlf_sql);
-    tamper_checksum(&path, 2, &crlf_checksum).await;
+    assert_ne!(lf_checksum, crlf_checksum);
+    // Create a real mismatch even when the embedded SQL uses CRLF.
+    let alternate_checksum = if m.checksum.as_ref() == crlf_checksum.as_slice() {
+        lf_checksum
+    } else {
+        crlf_checksum
+    };
+    assert_ne!(alternate_checksum.as_slice(), m.checksum.as_ref());
+    tamper_checksum(&path, 2, &alternate_checksum).await;
 
     let err = Database::open(&path)
         .await
         .expect_err("a inicialização normal deve falhar sem reparar");
     assert!(matches!(err, TinaError::MigrationChecksumConflict(_)));
+    assert_eq!(read_checksum(&path, 2).await, alternate_checksum);
     let backup_dir = dir.join("backups");
     assert!(
         !backup_dir.exists(),
@@ -122,7 +133,7 @@ async fn startup_nunca_repara_e_ferramenta_explicita_preserva_dados_e_backup() {
     assert_eq!(backups.len(), 1, "um único backup verificado deve existir");
     assert_eq!(
         read_checksum(&backups[0].path(), 2).await,
-        crlf_checksum,
+        alternate_checksum,
         "o backup deve conter o checksum original, anterior ao reparo"
     );
 

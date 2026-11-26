@@ -330,12 +330,16 @@ async fn chat_decide_department(
 }
 
 #[tauri::command]
-fn list_tool_catalog(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::tool_access::ToolEntry>, String> {
+fn list_tool_catalog(
+    app: State<'_, TinaApp>,
+) -> Result<Vec<tina::infra::tool_access::ToolEntry>, String> {
     app.owner_tool_catalog().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn list_tool_grants(app: State<'_, TinaApp>) -> Result<Vec<tina::infra::tool_access::ToolGrant>, String> {
+async fn list_tool_grants(
+    app: State<'_, TinaApp>,
+) -> Result<Vec<tina::infra::tool_access::ToolGrant>, String> {
     app.owner_tool_grants().await.map_err(|e| e.to_string())
 }
 
@@ -346,7 +350,9 @@ async fn change_tool_access(
     action: String,
     key: String,
 ) -> Result<(), String> {
-    app.owner_change_tool_access(&employee_id, &action, &key).await.map_err(|e| e.to_string())
+    app.owner_change_tool_access(&employee_id, &action, &key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

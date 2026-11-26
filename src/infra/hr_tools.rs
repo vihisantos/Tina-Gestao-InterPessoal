@@ -99,9 +99,15 @@ pub(super) async fn propose_position(
             "Não encontrei um departamento ativo e inequívoco nessa organização. Precisamos identificar o destino antes de criar um cargo.").await;
     }
     let (company_id, company_name, department_id, department_name) = target.unwrap();
-    let existing: Vec<String> = sqlx::query_scalar("SELECT name FROM positions WHERE department_id=?")
-        .bind(department_id).fetch_all(&mut **tx).await?;
-    if existing.iter().any(|name| name.to_lowercase() == args.name.to_lowercase()) {
+    let existing: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM positions WHERE department_id=?")
+            .bind(department_id)
+            .fetch_all(&mut **tx)
+            .await?;
+    if existing
+        .iter()
+        .any(|name| name.to_lowercase() == args.name.to_lowercase())
+    {
         return assistant(tx, installation, session,
             "Já existe um cargo com esse nome no departamento. Vamos avaliar o cargo existente antes de duplicá-lo.").await;
     }
@@ -138,9 +144,15 @@ pub(super) async fn decide_position(
     let p: StoredPosition = sqlx::query_as("SELECT company_id,company_name,organization_kind,department_id,department_name,name,level,description FROM chat_position_proposals WHERE id=? AND installation_id=? AND session_id=? AND status='pending'")
         .bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
     let (status, entity, content) = if approved {
-        let names: Vec<String> = sqlx::query_scalar("SELECT name FROM positions WHERE department_id=?")
-            .bind(&p.department_id).fetch_all(&mut *tx).await?;
-        if names.iter().any(|name| name.to_lowercase() == p.name.to_lowercase()) {
+        let names: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM positions WHERE department_id=?")
+                .bind(&p.department_id)
+                .fetch_all(&mut *tx)
+                .await?;
+        if names
+            .iter()
+            .any(|name| name.to_lowercase() == p.name.to_lowercase())
+        {
             return Err(TinaError::Validation("cargo já existente".into()));
         }
         let id = Uuid::new_v4().to_string();
@@ -149,12 +161,22 @@ pub(super) async fn decide_position(
             .bind(&p.department_name).bind(&p.company_id).bind(&p.company_name)
             .bind(&p.organization_kind).bind(installation).execute(&mut *tx).await?;
         if result.rows_affected() != 1 {
-            return Err(TinaError::Validation("destino alterado ou indisponível".into()));
+            return Err(TinaError::Validation(
+                "destino alterado ou indisponível".into(),
+            ));
         }
-        let content = format!("Cargo criado: {} em {} / {}. Ainda não há agente contratado por esta proposta.", p.name,p.company_name,p.department_name);
+        let content = format!(
+            "Cargo criado: {} em {} / {}. Ainda não há agente contratado por esta proposta.",
+            p.name, p.company_name, p.department_name
+        );
         ("approved", id, content)
     } else {
-        ("rejected", proposal.to_owned(), "Criação de cargo recusada. Nenhum cargo ou agente foi criado por esta proposta.".to_owned())
+        (
+            "rejected",
+            proposal.to_owned(),
+            "Criação de cargo recusada. Nenhum cargo ou agente foi criado por esta proposta."
+                .to_owned(),
+        )
     };
     sqlx::query("INSERT INTO organizational_audit_events(id,installation_id,company_id,entity_type,entity_id,action,outcome,actor_type,actor_id,metadata_json) VALUES (?,?,?,'tool',?,'create_position',?,'owner',?,?)")
         .bind(Uuid::new_v4().to_string()).bind(installation).bind(&p.company_id).bind(entity)
@@ -179,26 +201,59 @@ mod tests {
     #[tokio::test]
     async fn position_proposal_requires_approval_and_does_not_hire() {
         let path = std::env::temp_dir().join(format!("tina-rh-{}.db", Uuid::new_v4()));
-        let app = crate::TinaApp::initialize_at(&path, "rh-install", "rh-owner").await.unwrap();
+        let app = crate::TinaApp::initialize_at(&path, "rh-install", "rh-owner")
+            .await
+            .unwrap();
         app.unlock_owner_for_test().unwrap();
-        let company = app.owner_create_company_with_kind("Pessoal", "personal").await.unwrap();
-        let department = app.owner_create_department(&company.id, "FIN", "Finanças", None).await.unwrap();
+        let company = app
+            .owner_create_company_with_kind("Pessoal", "personal")
+            .await
+            .unwrap();
+        let department = app
+            .owner_create_department(&company.id, "FIN", "Finanças", None)
+            .await
+            .unwrap();
         let session = app.owner_create_chat("RH").await.unwrap();
-        let user = app.owner_append_chat_message(&session.id, "Preciso acompanhar melhor meu orçamento").await.unwrap();
+        let user = app
+            .owner_append_chat_message(&session.id, "Preciso acompanhar melhor meu orçamento")
+            .await
+            .unwrap();
         let pool = app.database().pool();
         super::super::chat_tools::propose(pool, "rh-install", &session.id, &user.id, "create_position",
             r#"{"organization_kind":"personal","company_name":"Pessoal","department_name":"Finanças","name":"Analista","level":1,"description":"Acompanhar orçamento","reason":"Organizar finanças"}"#).await.unwrap();
-        let count = || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM positions WHERE department_id=?").bind(&department.id).fetch_one(pool);
+        let count = || {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM positions WHERE department_id=?")
+                .bind(&department.id)
+                .fetch_one(pool)
+        };
         assert_eq!(count().await.unwrap(), 0);
-        let proposal = app.owner_pending_department(&session.id).await.unwrap().unwrap();
+        let proposal = app
+            .owner_pending_department(&session.id)
+            .await
+            .unwrap()
+            .unwrap();
         // Consulta a identidade persistida da proposta sem aceitar IDs do modelo.
-        let id: String = sqlx::query_scalar("SELECT id FROM chat_position_proposals WHERE session_id=?").bind(&session.id).fetch_one(pool).await.unwrap();
+        let id: String =
+            sqlx::query_scalar("SELECT id FROM chat_position_proposals WHERE session_id=?")
+                .bind(&session.id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
         drop(proposal);
-        let first = app.owner_decide_department(&session.id, &id, true).await.unwrap();
-        let again = app.owner_decide_department(&session.id, &id, true).await.unwrap();
+        let first = app
+            .owner_decide_department(&session.id, &id, true)
+            .await
+            .unwrap();
+        let again = app
+            .owner_decide_department(&session.id, &id, true)
+            .await
+            .unwrap();
         assert_eq!(first.id, again.id);
         assert_eq!(count().await.unwrap(), 1);
-        let employees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM employees").fetch_one(pool).await.unwrap();
+        let employees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM employees")
+            .fetch_one(pool)
+            .await
+            .unwrap();
         assert_eq!(employees, 0);
         pool.close().await;
         let _ = std::fs::remove_file(path);

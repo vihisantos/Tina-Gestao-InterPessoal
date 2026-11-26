@@ -389,7 +389,9 @@ impl<'a> PositionRepository<'a> {
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() != 1 {
-            return Err(TinaError::Unauthorized("departamento indisponível ou fora da instalação".into()));
+            return Err(TinaError::Unauthorized(
+                "departamento indisponível ou fora da instalação".into(),
+            ));
         }
 
         let row: PositionRow = sqlx::query_as(

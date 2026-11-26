@@ -88,7 +88,9 @@ fn parse_organization(input: &str) -> Result<OrganizationArgs> {
         || args.reason.chars().count() > 500
         || args.reason.chars().any(char::is_control)
     {
-        return Err(TinaError::Validation("nome, tipo ou justificativa inválidos".into()));
+        return Err(TinaError::Validation(
+            "nome, tipo ou justificativa inválidos".into(),
+        ));
     }
     Ok(args)
 }
@@ -203,12 +205,16 @@ pub(crate) async fn propose(
         return Ok(response);
     }
     if super::tool_access::is_management(name) {
-        let response = super::tool_access::propose(&mut tx, installation, session, user, name, arguments).await?;
+        let response =
+            super::tool_access::propose(&mut tx, installation, session, user, name, arguments)
+                .await?;
         tx.commit().await?;
         return Ok(response);
     }
     if name == "create_position" {
-        let response = super::hr_tools::propose_position(&mut tx, installation, session, user, arguments).await?;
+        let response =
+            super::hr_tools::propose_position(&mut tx, installation, session, user, arguments)
+                .await?;
         tx.commit().await?;
         return Ok(response);
     }
@@ -227,9 +233,13 @@ pub(crate) async fn propose(
             let personal = OrganizationArgs {
                 organization_kind: "personal".into(),
                 name: "Pessoal".into(),
-                reason: format!("Organizar a vida pessoal e permitir a criação do departamento {}.", args.name),
+                reason: format!(
+                    "Organizar a vida pessoal e permitir a criação do departamento {}.",
+                    args.name
+                ),
             };
-            let response = propose_organization(&mut tx, installation, session, user, &personal).await?;
+            let response =
+                propose_organization(&mut tx, installation, session, user, &personal).await?;
             tx.commit().await?;
             return Ok(response);
         }
@@ -243,12 +253,11 @@ pub(crate) async fn propose(
         return Ok(response);
     }
     let (company_id, company_name) = organization.unwrap();
-    let existing: Vec<(String, String)> = sqlx::query_as(
-        "SELECT name,code FROM departments WHERE company_id = ?",
-    )
-    .bind(company_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let existing: Vec<(String, String)> =
+        sqlx::query_as("SELECT name,code FROM departments WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_all(&mut *tx)
+            .await?;
     if existing.iter().any(|(name, code)| {
         name.to_lowercase() == args.name.to_lowercase() || code.eq_ignore_ascii_case(&args.code)
     }) {
@@ -274,12 +283,11 @@ async fn propose_organization(
     user: &str,
     args: &OrganizationArgs,
 ) -> Result<ChatMessage> {
-    let existing: Vec<(String, String)> = sqlx::query_as(
-        "SELECT name,kind FROM companies WHERE installation_id = ?",
-    )
-    .bind(installation)
-    .fetch_all(&mut **tx)
-    .await?;
+    let existing: Vec<(String, String)> =
+        sqlx::query_as("SELECT name,kind FROM companies WHERE installation_id = ?")
+            .bind(installation)
+            .fetch_all(&mut **tx)
+            .await?;
     if existing.iter().any(|(name, kind)| {
         name.to_lowercase() == args.name.to_lowercase()
             || (args.organization_kind == "personal" && kind == "personal")
@@ -351,10 +359,19 @@ pub(crate) async fn decide(
         .filter(|p: &DepartmentProposal| p.id == proposal)
         .ok_or_else(|| TinaError::Unauthorized("proposta inexistente ou substituída".into()))?;
     if super::tool_access::is_management(&p.tool_name) {
-        return super::tool_access::decide(tx, installation, owner, session, proposal, approved).await;
+        return super::tool_access::decide(tx, installation, owner, session, proposal, approved)
+            .await;
     }
     if p.tool_name == "create_position" {
-        return super::hr_tools::decide_position(tx, installation, owner, session, proposal, approved).await;
+        return super::hr_tools::decide_position(
+            tx,
+            installation,
+            owner,
+            session,
+            proposal,
+            approved,
+        )
+        .await;
     }
     if p.tool_name == "create_organization" {
         return decide_organization(tx, installation, owner, session, &p, approved).await;
@@ -363,12 +380,11 @@ pub(crate) async fn decide(
     let content;
     let entity_id;
     if approved {
-        let existing: Vec<(String, String)> = sqlx::query_as(
-            "SELECT name,code FROM departments WHERE company_id = ?",
-        )
-        .bind(&p.company_id)
-        .fetch_all(&mut *tx)
-        .await?;
+        let existing: Vec<(String, String)> =
+            sqlx::query_as("SELECT name,code FROM departments WHERE company_id = ?")
+                .bind(&p.company_id)
+                .fetch_all(&mut *tx)
+                .await?;
         if existing.iter().any(|(name, code)| {
             name.to_lowercase() == p.name.to_lowercase() || code.eq_ignore_ascii_case(&p.code)
         }) {
@@ -414,12 +430,11 @@ async fn decide_organization(
     approved: bool,
 ) -> Result<ChatMessage> {
     let (status, entity, company, content) = if approved {
-        let existing: Vec<(String, String)> = sqlx::query_as(
-            "SELECT name,kind FROM companies WHERE installation_id = ?",
-        )
-        .bind(installation)
-        .fetch_all(&mut *tx)
-        .await?;
+        let existing: Vec<(String, String)> =
+            sqlx::query_as("SELECT name,kind FROM companies WHERE installation_id = ?")
+                .bind(installation)
+                .fetch_all(&mut *tx)
+                .await?;
         if existing.iter().any(|(name, kind)| {
             name.to_lowercase() == p.name.to_lowercase()
                 || (p.organization_kind == "personal" && kind == "personal")
@@ -427,13 +442,25 @@ async fn decide_organization(
             return Err(TinaError::Validation("organização já existente".into()));
         }
         let id = Uuid::new_v4().to_string();
-        sqlx::query("INSERT INTO companies(id,installation_id,name,kind,status) VALUES (?,?,?,?,'active')")
-            .bind(&id).bind(installation).bind(&p.name).bind(&p.organization_kind)
-            .execute(&mut *tx).await?;
+        sqlx::query(
+            "INSERT INTO companies(id,installation_id,name,kind,status) VALUES (?,?,?,?,'active')",
+        )
+        .bind(&id)
+        .bind(installation)
+        .bind(&p.name)
+        .bind(&p.organization_kind)
+        .execute(&mut *tx)
+        .await?;
         let content = format!("Organização criada com sucesso: {}. Consulte a área Organizações. Nenhum departamento foi criado automaticamente.", p.name);
         ("approved", id.clone(), Some(id), content)
     } else {
-        ("rejected", p.id.clone(), None, "Criação de organização recusada. Nenhuma organização foi criada por esta proposta.".into())
+        (
+            "rejected",
+            p.id.clone(),
+            None,
+            "Criação de organização recusada. Nenhuma organização foi criada por esta proposta."
+                .into(),
+        )
     };
     sqlx::query("INSERT INTO organizational_audit_events(id,installation_id,company_id,entity_type,entity_id,action,outcome,actor_type,actor_id,metadata_json) VALUES (?,?,?,'tool',?,'create_organization',?,'owner',?,?)")
         .bind(Uuid::new_v4().to_string()).bind(installation).bind(company).bind(entity)
@@ -544,7 +571,10 @@ mod tests {
         app.unlock_owner_for_test().unwrap();
         let session = app.owner_create_chat("Rotina").await.unwrap();
         let user = app
-            .owner_append_chat_message(&session.id, "Estou com dificuldade de organizar minha rotina")
+            .owner_append_chat_message(
+                &session.id,
+                "Estou com dificuldade de organizar minha rotina",
+            )
             .await
             .unwrap();
         let pool = app.database().pool();
@@ -559,18 +589,35 @@ mod tests {
         .await
         .unwrap();
         let repo = crate::infra::CompanyRepository::new(pool);
-        assert!(repo.list_by_installation("org-tool-install").await.unwrap().is_empty());
-        let proposal = app.owner_pending_department(&session.id).await.unwrap().unwrap();
+        assert!(repo
+            .list_by_installation("org-tool-install")
+            .await
+            .unwrap()
+            .is_empty());
+        let proposal = app
+            .owner_pending_department(&session.id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(proposal.tool_name, "create_organization");
-        let first = app.owner_decide_department(&session.id, &proposal.id, true).await.unwrap();
-        let again = app.owner_decide_department(&session.id, &proposal.id, true).await.unwrap();
+        let first = app
+            .owner_decide_department(&session.id, &proposal.id, true)
+            .await
+            .unwrap();
+        let again = app
+            .owner_decide_department(&session.id, &proposal.id, true)
+            .await
+            .unwrap();
         assert_eq!(first.id, again.id);
         let rows = repo.list_by_installation("org-tool-install").await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].kind, "personal");
-        assert!(app.owner_pending_department(&session.id).await.unwrap().is_none());
+        assert!(app
+            .owner_pending_department(&session.id)
+            .await
+            .unwrap()
+            .is_none());
         pool.close().await;
         let _ = std::fs::remove_file(path);
     }
-
 }

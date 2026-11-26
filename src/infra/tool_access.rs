@@ -24,20 +24,43 @@ pub struct ToolEntry {
 pub fn catalog() -> Vec<ToolEntry> {
     [
         ("create_position", "rh", "Propor criação de cargo", true),
-        ("create_organization", "organization", "Propor organização", false),
-        ("create_department", "organization", "Propor departamento", false),
-        ("assign_tool", "administration", "Atribuir ferramenta", false),
+        (
+            "create_organization",
+            "organization",
+            "Propor organização",
+            false,
+        ),
+        (
+            "create_department",
+            "organization",
+            "Propor departamento",
+            false,
+        ),
+        (
+            "assign_tool",
+            "administration",
+            "Atribuir ferramenta",
+            false,
+        ),
         ("revoke_tool", "administration", "Revogar ferramenta", false),
         ("assign_app", "administration", "Atribuir aplicativo", false),
         ("revoke_app", "administration", "Revogar aplicativo", false),
     ]
     .into_iter()
-    .map(|(key, app, label, assignable)| ToolEntry { key, app, label, assignable })
+    .map(|(key, app, label, assignable)| ToolEntry {
+        key,
+        app,
+        label,
+        assignable,
+    })
     .collect()
 }
 
 pub(super) fn is_management(action: &str) -> bool {
-    matches!(action, "assign_tool" | "revoke_tool" | "assign_app" | "revoke_app")
+    matches!(
+        action,
+        "assign_tool" | "revoke_tool" | "assign_app" | "revoke_app"
+    )
 }
 
 fn assigning(action: &str) -> bool {
@@ -49,11 +72,15 @@ fn expand(action: &str, key: &str) -> Result<Vec<String>> {
         return Err(TinaError::Validation("operação de acesso inválida".into()));
     }
     let app = matches!(action, "assign_app" | "revoke_app");
-    let keys: Vec<String> = catalog().into_iter()
+    let keys: Vec<String> = catalog()
+        .into_iter()
         .filter(|t| t.assignable && if app { t.app == key } else { t.key == key })
-        .map(|t| t.key.to_owned()).collect();
+        .map(|t| t.key.to_owned())
+        .collect();
     if keys.is_empty() {
-        return Err(TinaError::PermissionDenied("ferramenta ou aplicativo não delegável".into()));
+        return Err(TinaError::PermissionDenied(
+            "ferramenta ou aplicativo não delegável".into(),
+        ));
     }
     Ok(keys)
 }
@@ -109,7 +136,11 @@ const TARGETS: &str = "SELECT e.id AS employee_id,e.name AS employee_name,c.id A
 
 async fn target(tx: &mut Transaction<'_, Sqlite>, installation: &str, id: &str) -> Result<Target> {
     let query = format!("{TARGETS} AND e.id=?");
-    sqlx::query_as(&query).bind(installation).bind(id).fetch_optional(&mut **tx).await?
+    sqlx::query_as(&query)
+        .bind(installation)
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?
         .ok_or_else(|| TinaError::Unauthorized("funcionário fora da instalação".into()))
 }
 
@@ -123,14 +154,21 @@ async fn apply(
     approved: bool,
 ) -> Result<()> {
     if assigning(action) && approved && !t.active {
-        return Err(TinaError::Validation("funcionário ou estrutura inativa".into()));
+        return Err(TinaError::Validation(
+            "funcionário ou estrutura inativa".into(),
+        ));
     }
     if keys.is_empty() || !is_management(action) {
         return Err(TinaError::Validation("concessão inválida".into()));
     }
     for key in keys {
-        if !catalog().iter().any(|entry| entry.assignable && entry.key == key.as_str()) {
-            return Err(TinaError::PermissionDenied("ferramenta não delegável".into()));
+        if !catalog()
+            .iter()
+            .any(|entry| entry.assignable && entry.key == key.as_str())
+        {
+            return Err(TinaError::PermissionDenied(
+                "ferramenta não delegável".into(),
+            ));
         }
         if approved {
             if assigning(action) {
@@ -150,7 +188,14 @@ async fn apply(
     Ok(())
 }
 
-pub(crate) async fn change(pool: &SqlitePool, installation: &str, owner: &str, employee: &str, action: &str, key: &str) -> Result<()> {
+pub(crate) async fn change(
+    pool: &SqlitePool,
+    installation: &str,
+    owner: &str,
+    employee: &str,
+    action: &str,
+    key: &str,
+) -> Result<()> {
     let keys = expand(action, key)?;
     let mut tx = begin_owner_write(pool, installation, owner).await?;
     let t = target(&mut tx, installation, employee).await?;
@@ -169,17 +214,27 @@ pub(crate) async fn check_employee_tool(
     department: &str,
     key: &str,
 ) -> Result<()> {
-    let Actor::Employee { employee_id, company_id } = context.actor() else {
-        return Err(TinaError::PermissionDenied("contexto de funcionário necessário".into()));
+    let Actor::Employee {
+        employee_id,
+        company_id,
+    } = context.actor()
+    else {
+        return Err(TinaError::PermissionDenied(
+            "contexto de funcionário necessário".into(),
+        ));
     };
     if company_id != company || !catalog().iter().any(|t| t.assignable && t.key == key) {
-        return Err(TinaError::PermissionDenied("escopo ou ferramenta não concedida".into()));
+        return Err(TinaError::PermissionDenied(
+            "escopo ou ferramenta não concedida".into(),
+        ));
     }
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM employee_tool_grants g JOIN employees e ON e.id=g.employee_id JOIN positions p ON p.id=e.position_id JOIN departments d ON d.id=p.department_id JOIN companies c ON c.id=d.company_id WHERE g.installation_id=? AND g.employee_id=? AND g.company_id=? AND g.department_id=? AND g.tool_key=? AND c.installation_id=g.installation_id AND c.id=g.company_id AND d.id=g.department_id AND e.status='active' AND p.status='active' AND d.status='active' AND c.status='active'")
         .bind(context.installation_id()).bind(employee_id).bind(company).bind(department).bind(key)
         .fetch_one(pool).await?;
     if count != 1 {
-        return Err(TinaError::PermissionDenied("ferramenta não concedida neste escopo".into()));
+        return Err(TinaError::PermissionDenied(
+            "ferramenta não concedida neste escopo".into(),
+        ));
     }
     Ok(())
 }
@@ -195,26 +250,51 @@ struct Args {
 }
 
 pub(super) async fn propose(
-    tx: &mut Transaction<'_, Sqlite>, installation: &str, session: &str,
-    user: &str, action: &str, input: &str,
+    tx: &mut Transaction<'_, Sqlite>,
+    installation: &str,
+    session: &str,
+    user: &str,
+    action: &str,
+    input: &str,
 ) -> Result<ChatMessage> {
     if input.len() > 16_384 {
         return Err(TinaError::Validation("argumentos extensos".into()));
     }
-    let a: Args = serde_json::from_str(input).map_err(|_| TinaError::Validation("argumentos de acesso inválidos".into()))?;
-    if [&a.company_name,&a.department_name,&a.employee_name,&a.key,&a.reason].iter().any(|s| s.trim().is_empty() || s.chars().count()>500 || s.chars().any(char::is_control)) {
-        return Err(TinaError::Validation("informe funcionário, escopo e justificativa".into()));
+    let a: Args = serde_json::from_str(input)
+        .map_err(|_| TinaError::Validation("argumentos de acesso inválidos".into()))?;
+    if [
+        &a.company_name,
+        &a.department_name,
+        &a.employee_name,
+        &a.key,
+        &a.reason,
+    ]
+    .iter()
+    .any(|s| s.trim().is_empty() || s.chars().count() > 500 || s.chars().any(char::is_control))
+    {
+        return Err(TinaError::Validation(
+            "informe funcionário, escopo e justificativa".into(),
+        ));
     }
     let keys = expand(action, &a.key)?;
-    let rows: Vec<Target> = sqlx::query_as(TARGETS).bind(installation).fetch_all(&mut **tx).await?;
-    let mut matches = rows.iter().filter(|t| t.company_name.to_lowercase()==a.company_name.trim().to_lowercase() && t.department_name.to_lowercase()==a.department_name.trim().to_lowercase() && t.employee_name.to_lowercase()==a.employee_name.trim().to_lowercase());
+    let rows: Vec<Target> = sqlx::query_as(TARGETS)
+        .bind(installation)
+        .fetch_all(&mut **tx)
+        .await?;
+    let mut matches = rows.iter().filter(|t| {
+        t.company_name.to_lowercase() == a.company_name.trim().to_lowercase()
+            && t.department_name.to_lowercase() == a.department_name.trim().to_lowercase()
+            && t.employee_name.to_lowercase() == a.employee_name.trim().to_lowercase()
+    });
     let found = matches.next();
     if found.is_none() || matches.next().is_some() {
         return assistant(tx,installation,session,"Não encontrei um funcionário inequívoco nesse escopo. Precisamos identificar o funcionário antes de alterar ferramentas.").await;
     }
     let t = found.unwrap();
     if assigning(action) && !t.active {
-        return Err(TinaError::Validation("funcionário ou estrutura inativa".into()));
+        return Err(TinaError::Validation(
+            "funcionário ou estrutura inativa".into(),
+        ));
     }
     let response = assistant(tx,installation,session,"Preparei uma alteração de ferramentas do funcionário. Confira o escopo, as ferramentas e o motivo antes de autorizar.").await?;
     sqlx::query("INSERT INTO chat_tool_access_proposals(id,installation_id,session_id,user_message_id,proposal_message_id,employee_id,employee_name,company_id,company_name,organization_kind,department_id,department_name,action,tool_keys,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
@@ -238,26 +318,38 @@ struct Proposal {
 }
 
 pub(super) async fn decide(
-    mut tx: Transaction<'_, Sqlite>, installation: &str, owner: &str,
-    session: &str, proposal: &str, approved: bool,
+    mut tx: Transaction<'_, Sqlite>,
+    installation: &str,
+    owner: &str,
+    session: &str,
+    proposal: &str,
+    approved: bool,
 ) -> Result<ChatMessage> {
     let p: Proposal = sqlx::query_as("SELECT employee_id,employee_name,company_id,company_name,department_id,department_name,action,tool_keys FROM chat_tool_access_proposals WHERE id=? AND installation_id=? AND session_id=? AND status='pending'")
         .bind(proposal).bind(installation).bind(session).fetch_one(&mut *tx).await?;
-    let t = target(&mut tx,installation,&p.employee_id).await?;
-    if t.company_id != p.company_id || t.department_id != p.department_id || t.employee_name != p.employee_name || t.company_name != p.company_name || t.department_name != p.department_name {
-        return Err(TinaError::Validation("escopo do funcionário mudou; refaça a proposta".into()));
+    let t = target(&mut tx, installation, &p.employee_id).await?;
+    if t.company_id != p.company_id
+        || t.department_id != p.department_id
+        || t.employee_name != p.employee_name
+        || t.company_name != p.company_name
+        || t.department_name != p.department_name
+    {
+        return Err(TinaError::Validation(
+            "escopo do funcionário mudou; refaça a proposta".into(),
+        ));
     }
-    let keys: Vec<String> = serde_json::from_str(&p.tool_keys).map_err(|_| TinaError::Validation("proposta inválida".into()))?;
-    apply(&mut tx,installation,owner,&t,&p.action,&keys,approved).await?;
+    let keys: Vec<String> = serde_json::from_str(&p.tool_keys)
+        .map_err(|_| TinaError::Validation("proposta inválida".into()))?;
+    apply(&mut tx, installation, owner, &t, &p.action, &keys, approved).await?;
     let content = if approved {
         format!("Ferramentas {} para {}: {}. A configuração está registrada; o executor de agentes ainda não está integrado.", if assigning(&p.action) {"atribuídas"} else {"revogadas"}, t.employee_name, keys.join(", "))
     } else {
         "Alteração recusada. Nenhum acesso foi modificado.".to_owned()
     };
-    let response = assistant(&mut tx,installation,session,&content).await?;
+    let response = assistant(&mut tx, installation, session, &content).await?;
     sqlx::query("UPDATE chat_tool_access_proposals SET status=?,result_message_id=? WHERE id=? AND installation_id=? AND status='pending'")
         .bind(if approved {"approved"} else {"rejected"}).bind(&response.id).bind(proposal).bind(installation).execute(&mut *tx).await?;
-    commit_owner_write(tx,installation).await?;
+    commit_owner_write(tx, installation).await?;
     Ok(response)
 }
 
@@ -276,21 +368,62 @@ mod tests {
     #[tokio::test]
     async fn grants_are_scoped_and_revocable() {
         let path = std::env::temp_dir().join(format!("tina-grants-{}.db", Uuid::new_v4()));
-        let app = crate::TinaApp::initialize_at(&path,"grant-install","grant-owner").await.unwrap();
+        let app = crate::TinaApp::initialize_at(&path, "grant-install", "grant-owner")
+            .await
+            .unwrap();
         app.unlock_owner_for_test().unwrap();
         let company = app.owner_create_company("Empresa").await.unwrap();
-        let dept = app.owner_create_department(&company.id,"RH","RH",None).await.unwrap();
-        let position = app.owner_create_position(&dept.id,"Analista",1,0,None).await.unwrap();
-        let employee = app.owner_create_employee(&position.id,"Agente RH",None,None).await.unwrap();
-        let ctx = ActorContext::verified("grant-install".into(),Actor::Employee { employee_id:employee.id.clone(),company_id:company.id.clone() });
+        let dept = app
+            .owner_create_department(&company.id, "RH", "RH", None)
+            .await
+            .unwrap();
+        let position = app
+            .owner_create_position(&dept.id, "Analista", 1, 0, None)
+            .await
+            .unwrap();
+        let employee = app
+            .owner_create_employee(&position.id, "Agente RH", None, None)
+            .await
+            .unwrap();
+        let ctx = ActorContext::verified(
+            "grant-install".into(),
+            Actor::Employee {
+                employee_id: employee.id.clone(),
+                company_id: company.id.clone(),
+            },
+        );
         let pool = app.database().pool();
-        assert!(check_employee_tool(pool,&ctx,&company.id,&dept.id,"create_position").await.is_err());
-        app.owner_change_tool_access(&employee.id,"assign_app","rh").await.unwrap();
-        assert!(check_employee_tool(pool,&ctx,&company.id,&dept.id,"create_position").await.is_ok());
-        assert!(check_employee_tool(pool,&ctx,&company.id,"other","create_position").await.is_err());
-        assert!(check_employee_tool(pool,&ctx,&company.id,&dept.id,"assign_tool").await.is_err());
-        app.owner_change_tool_access(&employee.id,"revoke_tool","create_position").await.unwrap();
-        assert!(check_employee_tool(pool,&ctx,&company.id,&dept.id,"create_position").await.is_err());
+        assert!(
+            check_employee_tool(pool, &ctx, &company.id, &dept.id, "create_position")
+                .await
+                .is_err()
+        );
+        app.owner_change_tool_access(&employee.id, "assign_app", "rh")
+            .await
+            .unwrap();
+        assert!(
+            check_employee_tool(pool, &ctx, &company.id, &dept.id, "create_position")
+                .await
+                .is_ok()
+        );
+        assert!(
+            check_employee_tool(pool, &ctx, &company.id, "other", "create_position")
+                .await
+                .is_err()
+        );
+        assert!(
+            check_employee_tool(pool, &ctx, &company.id, &dept.id, "assign_tool")
+                .await
+                .is_err()
+        );
+        app.owner_change_tool_access(&employee.id, "revoke_tool", "create_position")
+            .await
+            .unwrap();
+        assert!(
+            check_employee_tool(pool, &ctx, &company.id, &dept.id, "create_position")
+                .await
+                .is_err()
+        );
         pool.close().await;
         let _ = std::fs::remove_file(path);
     }

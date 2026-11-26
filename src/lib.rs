@@ -266,7 +266,8 @@ impl TinaApp {
     /// Consulta as atribuições de ferramentas desta instalação.
     pub async fn owner_tool_grants(&self) -> Result<Vec<infra::tool_access::ToolGrant>> {
         self.require_owner(Operation::Read)?;
-        let rows = infra::tool_access::list(self.database.pool(), &self.config.installation_id).await?;
+        let rows =
+            infra::tool_access::list(self.database.pool(), &self.config.installation_id).await?;
         self.require_owner(Operation::Read)?;
         Ok(rows)
     }
@@ -286,7 +287,8 @@ impl TinaApp {
             employee_id,
             action,
             key,
-        ).await
+        )
+        .await
     }
 
     /// Armazena a chave NVIDIA no cofre nativo apÃƒÂ³s autorizaÃƒÂ§ÃƒÂ£o.

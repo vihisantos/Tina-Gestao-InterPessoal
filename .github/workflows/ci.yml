@@ -40,7 +40,7 @@ jobs:
             'docs/spec/out-of-scope.md', 'docs/provenance/POLICY.md', 'docs/provenance/REGISTER.md'
           )
           foreach ($file in $required) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file -Force).Length -eq 0) {
               throw "falta ou esta vazio: $file"
             }
           }

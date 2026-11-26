@@ -139,6 +139,7 @@ impl<'a> InstallationRepository<'a> {
             id: String,
             installation_id: String,
             name: String,
+            kind: String,
             status: String,
             created_at: String,
         }
@@ -156,6 +157,7 @@ impl<'a> InstallationRepository<'a> {
                     id: row.id,
                     installation_id: row.installation_id,
                     name: row.name,
+                    kind: row.kind,
                     status,
                     created_at: row.created_at,
                 }
@@ -163,7 +165,7 @@ impl<'a> InstallationRepository<'a> {
         }
 
         let rows: Vec<CompanyRow> = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE installation_id = ? AND status = 'active' ORDER BY name"
+            "SELECT id, installation_id, name, kind, status, created_at FROM companies WHERE installation_id = ? AND status = 'active' ORDER BY name"
         )
         .bind(installation_id)
         .fetch_all(self.pool)

@@ -31,6 +31,8 @@ pub struct Company {
     pub installation_id: String,
     /// Nome da empresa
     pub name: String,
+    /// Contexto pessoal ou empresarial; não depende do nome.
+    pub kind: String,
     /// Status da empresa
     pub status: CompanyStatus,
     /// Data de criação em RFC3339
@@ -50,6 +52,7 @@ impl Company {
             id,
             installation_id,
             name,
+            kind: "business".into(),
             status,
             created_at,
         }

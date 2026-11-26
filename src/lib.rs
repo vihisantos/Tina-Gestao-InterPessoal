@@ -529,7 +529,7 @@ impl TinaApp {
             self.require_owner(Operation::Write)?;
             check_session()?;
             let answer = tokio::select! {
-                result = infra::chat::stream_nvidia_from_base(
+                result = infra::chat::stream_nvidia_turn(
                     base_url,
                     &key,
                     &settings.default_model,
@@ -537,6 +537,7 @@ impl TinaApp {
                     settings.max_tokens,
                     response_timeout,
                     cancelled.clone(),
+                    true,
                     |delta| {
                         check_session()?;
                         on_delta(delta)
@@ -546,7 +547,7 @@ impl TinaApp {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         if let Err(error) = check_session() {
-                            break Err::<String, _>(error);
+                            break Err::<infra::chat::NvidiaTurn, _>(error);
                         }
                     }
                 } => result?,
@@ -556,15 +557,93 @@ impl TinaApp {
             if *cancelled.borrow() {
                 return Err(TinaError::Other("geraÃƒÂ§ÃƒÂ£o cancelada".into()));
             }
-            infra::chat::append_message(
-                self.database.pool(),
-                &self.config.installation_id,
-                session_id,
-                "assistant",
-                &answer,
-            )
-            .await
+            match answer {
+                infra::chat::NvidiaTurn::Text(answer) => {
+                    infra::chat::append_message(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        session_id,
+                        "assistant",
+                        &answer,
+                    )
+                    .await
+                }
+                infra::chat::NvidiaTurn::Tool(call) => {
+                    let user = context
+                        .last()
+                        .ok_or_else(|| TinaError::ToolError("mensagem ausente".into()))?;
+                    infra::chat_tools::propose(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        session_id,
+                        &user.id,
+                        &call.name,
+                        &call.arguments,
+                    )
+                    .await
+                }
+            }
         }
+    }
+
+    /// Consulta a proposta ativa da sessão, independente da última mensagem.
+    pub async fn owner_pending_department(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<infra::chat_tools::DepartmentProposal>> {
+        self.require_owner(Operation::Read)?;
+        infra::chat_tools::pending(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+        )
+        .await
+    }
+
+    /// Aprova ou recusa uma proposta persistida, com a identidade autenticada do proprietário.
+    pub async fn owner_decide_department(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        approved: bool,
+    ) -> Result<infra::chat::ChatMessage> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("há uma geração ativa".into()))?;
+        self.require_owner(Operation::Write)?;
+        infra::chat_tools::decide(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            proposal_id,
+            approved,
+        )
+        .await
+    }
+
+    /// Cancela uma proposta ativa sem criar nada; idempotente para o mesmo id.
+    pub async fn owner_cancel_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+    ) -> Result<infra::chat::ChatMessage> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("há uma geração ativa".into()))?;
+        self.require_owner(Operation::Write)?;
+        infra::chat_tools::cancel(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            proposal_id,
+        )
+        .await
     }
 
     /// Define chave NVIDIA em mem?ria para testes isolados.
@@ -601,6 +680,23 @@ impl TinaApp {
 
         infra::CompanyRepository::new(pool)
             .create_as_owner(installation_id, owner_id, name)
+            .await
+    }
+
+    /// Cria uma organização com contexto explícito, sem alterar a hierarquia existente.
+    pub async fn owner_create_company_with_kind(
+        &self,
+        name: &str,
+        kind: &str,
+    ) -> Result<crate::core::Company> {
+        self.require_owner(Operation::Write)?;
+        infra::CompanyRepository::new(self.database.pool())
+            .create_as_owner_with_kind(
+                &self.config.installation_id,
+                &self.config.owner_uuid,
+                name,
+                kind,
+            )
             .await
     }
 

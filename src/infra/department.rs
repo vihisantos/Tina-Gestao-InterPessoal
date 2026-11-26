@@ -319,19 +319,27 @@ impl<'a> DepartmentRepository<'a> {
         let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
         let id = Uuid::new_v4().to_string();
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO departments (id, company_id, code, name, description, status, created_at)
-            VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
+            SELECT ?, c.id, ?, ?, ?, 'active', datetime('now')
+            FROM companies c
+            WHERE c.id = ? AND c.installation_id = ? AND c.status = 'active'
             "#,
         )
         .bind(&id)
-        .bind(company_id)
         .bind(code)
         .bind(name)
         .bind(description)
+        .bind(company_id)
+        .bind(installation_id)
         .execute(&mut *tx)
         .await?;
+        if result.rows_affected() != 1 {
+            return Err(TinaError::Unauthorized(
+                "empresa indisponível ou fora da instalação".into(),
+            ));
+        }
 
         let row: DepartmentRow = sqlx::query_as(
             "SELECT id, company_id, code, name, description, status, created_at FROM departments WHERE id = ?",

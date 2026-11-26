@@ -13,6 +13,7 @@ struct CompanyRow {
     id: String,
     installation_id: String,
     name: String,
+    kind: String,
     status: String,
     created_at: String,
 }
@@ -30,6 +31,7 @@ impl From<CompanyRow> for Company {
             id: row.id,
             installation_id: row.installation_id,
             name: row.name,
+            kind: row.kind,
             status,
             created_at: row.created_at,
         }
@@ -76,7 +78,7 @@ impl<'a> CompanyRepository<'a> {
     /// Busca empresa pelo ID
     pub async fn find_by_id(&self, id: &str) -> Result<Company> {
         let row: CompanyRow = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
+            "SELECT id, installation_id, name, kind, status, created_at FROM companies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(self.pool)
@@ -88,7 +90,7 @@ impl<'a> CompanyRepository<'a> {
     /// Busca empresa pelo ID (opcional)
     pub async fn find_by_id_optional(&self, id: &str) -> Result<Option<Company>> {
         let row: Option<CompanyRow> = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
+            "SELECT id, installation_id, name, kind, status, created_at FROM companies WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(self.pool)
@@ -103,7 +105,7 @@ impl<'a> CompanyRepository<'a> {
     /// * `installation_id` - ID da instalação
     pub async fn list_by_installation(&self, installation_id: &str) -> Result<Vec<Company>> {
         let rows: Vec<CompanyRow> = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE installation_id = ? AND status = 'active' ORDER BY name"
+            "SELECT id, installation_id, name, kind, status, created_at FROM companies WHERE installation_id = ? AND status = 'active' ORDER BY name"
         )
         .bind(installation_id)
         .fetch_all(self.pool)
@@ -257,23 +259,42 @@ impl<'a> CompanyRepository<'a> {
         owner_id: &str,
         name: &str,
     ) -> Result<Company> {
+        self.create_as_owner_with_kind(installation_id, owner_id, name, "business")
+            .await
+    }
+
+    pub(crate) async fn create_as_owner_with_kind(
+        &self,
+        installation_id: &str,
+        owner_id: &str,
+        name: &str,
+        kind: &str,
+    ) -> Result<Company> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 160 || name.chars().any(char::is_control) {
+            return Err(TinaError::Validation("nome de organização inválido".into()));
+        }
+        if !matches!(kind, "personal" | "business") {
+            return Err(TinaError::Validation("tipo de organização inválido".into()));
+        }
         let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
         let id = Uuid::new_v4().to_string();
 
         sqlx::query(
             r#"
-            INSERT INTO companies (id, installation_id, name, status, created_at)
-            VALUES (?, ?, ?, 'active', datetime('now'))
+            INSERT INTO companies (id, installation_id, name, kind, status, created_at)
+            VALUES (?, ?, ?, ?, 'active', datetime('now'))
             "#,
         )
         .bind(&id)
         .bind(installation_id)
         .bind(name)
+        .bind(kind)
         .execute(&mut *tx)
         .await?;
 
         let row: CompanyRow = sqlx::query_as(
-            "SELECT id, installation_id, name, status, created_at FROM companies WHERE id = ?",
+            "SELECT id, installation_id, name, kind, status, created_at FROM companies WHERE id = ?",
         )
         .bind(&id)
         .fetch_one(&mut *tx)

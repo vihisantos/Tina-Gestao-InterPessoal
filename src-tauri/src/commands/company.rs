@@ -9,6 +9,7 @@ pub struct CompanyDto {
     pub id: String,
     pub installation_id: String,
     pub name: String,
+    pub kind: String,
     pub status: String,
     pub created_at: String,
 }
@@ -19,6 +20,7 @@ impl From<tina::core::Company> for CompanyDto {
             id: company.id,
             installation_id: company.installation_id,
             name: company.name,
+            kind: company.kind,
             status: company.status.to_string(),
             created_at: company.created_at,
         }
@@ -28,6 +30,7 @@ impl From<tina::core::Company> for CompanyDto {
 #[derive(Debug, Deserialize)]
 pub struct CreateCompanyRequest {
     pub name: String,
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,7 +94,10 @@ pub async fn create_company(
     request: CreateCompanyRequest,
 ) -> Result<CompanyDto, String> {
     let company = state
-        .owner_create_company(&request.name)
+        .owner_create_company_with_kind(
+            &request.name,
+            request.kind.as_deref().unwrap_or("business"),
+        )
         .await
         .map_err(|e| e.to_string())?;
 

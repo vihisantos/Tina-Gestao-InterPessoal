@@ -527,9 +527,98 @@ pub(crate) async fn stream_nvidia_from_base(
     messages: &[ChatMessage],
     max_tokens: u32,
     response_timeout: std::time::Duration,
-    mut cancelled: tokio::sync::watch::Receiver<bool>,
-    mut on_delta: impl FnMut(&str) -> Result<()>,
+    cancelled: tokio::sync::watch::Receiver<bool>,
+    on_delta: impl FnMut(&str) -> Result<()>,
 ) -> Result<String> {
+    match stream_nvidia_turn(
+        base_url,
+        key,
+        model,
+        messages,
+        max_tokens,
+        response_timeout,
+        cancelled,
+        false,
+        on_delta,
+    )
+    .await?
+    {
+        NvidiaTurn::Text(text) => Ok(text),
+        NvidiaTurn::Tool(_) => Err(TinaError::Other("tool não habilitada".into())),
+    }
+}
+
+/// Resultado completo de uma rodada de inferência.
+pub(crate) enum NvidiaTurn {
+    Text(String),
+    Tool(ToolCall),
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct ToolCall {
+    pub(crate) name: String,
+    pub(crate) arguments: String,
+    id: String,
+}
+
+fn accumulate_tool(value: &serde_json::Value, call: &mut ToolCall) -> Result<()> {
+    let calls = value.pointer("/choices/0/delta/tool_calls");
+    if let Some(calls) = calls {
+        let entries = calls
+            .as_array()
+            .ok_or_else(|| TinaError::ToolError("tool_calls inválido".into()))?;
+        for item in entries {
+            if item.get("index").and_then(|v| v.as_u64()) != Some(0)
+                || item
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|t| t != "function")
+            {
+                return Err(TinaError::ToolError(
+                    "apenas uma chamada de função por rodada".into(),
+                ));
+            }
+            if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                if !call.id.is_empty() && call.id != id {
+                    return Err(TinaError::ToolError(
+                        "identificador de chamada conflitante".into(),
+                    ));
+                }
+                if id.len() > 256 {
+                    return Err(TinaError::ToolError(
+                        "identificador de chamada extenso".into(),
+                    ));
+                }
+                call.id = id.to_owned();
+            }
+            for (pointer, target, limit) in [
+                ("/function/name", &mut call.name, 100usize),
+                ("/function/arguments", &mut call.arguments, 16_384usize),
+            ] {
+                if let Some(fragment) = item.pointer(pointer).and_then(|v| v.as_str()) {
+                    if target.len().saturating_add(fragment.len()) > limit {
+                        return Err(TinaError::ToolError("chamada excede limite".into()));
+                    }
+                    target.push_str(fragment);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn stream_nvidia_turn(
+    base_url: &str,
+    key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    max_tokens: u32,
+    response_timeout: std::time::Duration,
+    mut cancelled: tokio::sync::watch::Receiver<bool>,
+    enable_tools: bool,
+    mut on_delta: impl FnMut(&str) -> Result<()>,
+) -> Result<NvidiaTurn> {
     if key.is_empty() || model.trim().is_empty() || max_tokens == 0 || messages.is_empty() {
         return Err(TinaError::Other("configuração NVIDIA inválida".into()));
     }
@@ -546,12 +635,16 @@ pub(crate) async fn stream_nvidia_from_base(
         .timeout(response_timeout)
         .build()
         .map_err(|_| TinaError::Other("cliente NVIDIA indisponível".into()))?;
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": model,
         "messages": build_nvidia_messages(messages),
         "max_tokens": max_tokens,
         "stream": true
     });
+    if enable_tools {
+        payload["tools"] = super::chat_tools::definitions();
+        payload["tool_choice"] = serde_json::json!("auto");
+    }
     let request = client.post(endpoint).bearer_auth(key).json(&payload);
     let work = async {
         let mut response = request
@@ -567,12 +660,36 @@ pub(crate) async fn stream_nvidia_from_base(
         let mut decoder = NvidiaStreamDecoder::default();
         let mut answer = String::new();
         let mut stopped = false;
+        let mut tool_finished = false;
+        let mut call = ToolCall::default();
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|_| TinaError::Other("falha no stream NVIDIA".into()))?
         {
             for event in decoder.push(&chunk)? {
+                if enable_tools {
+                    let value: serde_json::Value = serde_json::from_str(&event)
+                        .map_err(|_| TinaError::Other("evento NVIDIA inválido".into()))?;
+                    if value.get("error").is_some() {
+                        return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
+                    }
+                    accumulate_tool(&value, &mut call)?;
+                    if value
+                        .pointer("/choices/0/finish_reason")
+                        .and_then(|v| v.as_str())
+                        == Some("tool_calls")
+                    {
+                        if stopped || tool_finished {
+                            return Err(TinaError::ToolError("conclusão conflitante".into()));
+                        }
+                        tool_finished = true;
+                        continue;
+                    }
+                    if value.pointer("/choices/0/delta/tool_calls").is_some() {
+                        continue;
+                    }
+                }
                 stopped |= append_nvidia_event(&event, &mut answer, &mut on_delta)?;
             }
             if decoder.done {
@@ -580,13 +697,22 @@ pub(crate) async fn stream_nvidia_from_base(
             }
         }
         decoder.finish()?;
+        if tool_finished {
+            if stopped || call.id.is_empty() || call.name.is_empty() || call.arguments.is_empty() {
+                return Err(TinaError::ToolError("chamada incompleta ou ambígua".into()));
+            }
+            return Ok(NvidiaTurn::Tool(call));
+        }
+        if !call.name.is_empty() || !call.arguments.is_empty() || !call.id.is_empty() {
+            return Err(TinaError::ToolError("chamada sem conclusão".into()));
+        }
         if !stopped {
             return Err(TinaError::Other("NVIDIA não confirmou conclusão".into()));
         }
         if answer.trim().is_empty() {
             return Err(TinaError::Other("resposta NVIDIA vazia".into()));
         }
-        Ok(answer)
+        Ok(NvidiaTurn::Text(answer))
     };
     tokio::select! {
         biased;
@@ -703,5 +829,31 @@ mod nvidia_event_tests {
         )
         .is_err());
         assert!(answer.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod tool_call_tests {
+    use super::*;
+
+    #[test]
+    fn assembles_fragmented_function_arguments() {
+        let mut call = ToolCall::default();
+        for value in [
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"create_department","arguments":"{\"name\":"}}]}}]}),
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Finanças\"}"}}]}}]}),
+        ] {
+            accumulate_tool(&value, &mut call).unwrap();
+        }
+        assert_eq!(call.name, "create_department");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap()["name"],
+            "Finanças"
+        );
+        assert!(accumulate_tool(
+            &serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":1}]}}]}),
+            &mut call
+        )
+        .is_err());
     }
 }

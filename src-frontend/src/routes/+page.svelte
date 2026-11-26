@@ -9,6 +9,8 @@
   import ChatComposer from '$lib/components/ChatComposer.svelte';
   import Logo from '$lib/components/Logo.svelte';
   import PersonnelDirectory from '$lib/components/PersonnelDirectory.svelte';
+  import DepartmentProposal from '$lib/components/DepartmentProposal.svelte';
+  import OrganizationDirectory from '$lib/components/OrganizationDirectory.svelte';
 
   type BootstrapInfo = {
     version: string;
@@ -56,7 +58,7 @@
   let pendingSend: { sessionId: string; messageId: string; content: string; title: string; creating: boolean } | null = $state(null);
   let retryAvailable = $derived(!!retryMessageId && messages.at(-1)?.id === retryMessageId && messages.at(-1)?.role === 'user');
   let chatLimits = $state<ChatLimits>({ maxUserMessageBytes: 4032 });
-  let view = $state<'chat' | 'pessoal'>('chat');
+  let view = $state<'chat' | 'pessoal' | 'organizations'>('chat');
   let initialGreeting = $derived.by(() => {
     const name = ownerStatus?.displayName?.trim();
     return name
@@ -504,6 +506,7 @@
     <section class="workspace" aria-label="Área principal">
       <nav class="app-nav" aria-label="Navegação principal">
         <button type="button" class:active={view === 'chat'} aria-current={view === 'chat' ? 'page' : undefined} onclick={() => (view = 'chat')}>Chat</button>
+        <button type="button" class:active={view === 'organizations'} aria-current={view === 'organizations' ? 'page' : undefined} onclick={() => (view = 'organizations')}>Organizações</button>
         <button type="button" class:active={view === 'pessoal'} aria-current={view === 'pessoal' ? 'page' : undefined} onclick={() => (view = 'pessoal')}>Pessoal</button>
       </nav>
 
@@ -540,6 +543,9 @@
           {#key selected}
             <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} greeting={initialGreeting} />
           {/key}
+          {#if selected}
+            <DepartmentProposal sessionId={selected} lastMessageId={messages.at(-1)?.id ?? ''} ondecision={(message) => { messages = [...messages.filter(m => m.id !== message.id), message]; }} />
+          {/if}
           {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}
           {#if retryAvailable && !chatBusy}
             <button disabled={chatLoading || !hasKey} onclick={retryChat}>Tentar resposta novamente</button>
@@ -547,6 +553,8 @@
           <ChatComposer bind:draft disabled={chatLoading || !hasKey} readOnly={!!pendingSend} busy={chatBusy} {generating} {cancelling} onSend={sendChat} onCancel={cancelChat} />
         </div>
       </section>
+      {:else if view === 'organizations'}
+        <OrganizationDirectory />
       {:else}
         <section class="pessoal-shell" aria-label="Pessoal">
           <PersonnelDirectory />

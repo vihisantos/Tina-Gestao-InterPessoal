@@ -1,7 +1,6 @@
 # Política de segurança
 
-A Tina é um projeto privado, em fase de bootstrap, sem usuários externos. Ainda assim, esta
-política já vale desde o primeiro commit.
+A Tina tem código publicamente visível e permanece em desenvolvimento. Dados reais, segredos e detalhes de incidentes não pertencem ao repositório público.
 
 ## Reportando uma vulnerabilidade
 
@@ -23,10 +22,17 @@ reproduzir. Não inclua exploits prontos em material público depois de corrigid
 - Violação da política de integridade: material de origem não aprovada no repositório.
 - Qualquer código futuro com comportamento malicioso ou imprevisto introduzido por dependência.
 
-## O que ainda não existe
+## Superfícies da aplicação
 
-- Código de aplicação, então superfícies "clássicas" (rede, input remoto, autenticação) ainda não se
-  aplicam. Quando existirem, esta seção será atualizada no mesmo PR que as introduzir.
+- Autenticação, autorização, armazenamento local, migrações SQLite, cofre de credenciais, WebView, comandos Tauri e chamadas a provedores externos.
+
+## Controles de publicação
+
+- Usar somente executores hospedados para CI público; nunca executar contribuições públicas em máquinas pessoais. Os testes nativos são locais, em ambiente isolado e com dados sintéticos.
+- Proteger a branch principal contra push direto, force push e merge sem revisão do proprietário.
+- Habilitar secret scanning, push protection, relatórios privados de vulnerabilidades e alertas de dependências nas configurações do GitHub. A política não implica que essas opções já estejam ativas.
+- Auditar todas as refs e o histórico, PRs, issues, logs e artefatos publicados; revogar ou rotacionar credenciais expostas. Remover arquivos do último commit não elimina cópias anteriores.
+- Não incluir bancos, configurações reais, conversas, credenciais ou logs de produção em testes, PRs ou artefatos.
 
 ## Compromissos permanentes
 

@@ -21,8 +21,7 @@ Cada componente registrado lista:
 ## Origem de primeira parte
 
 Código escrito para este repositório tem origem registrada como: autoria do proprietário/
-contribuidores declarados, licenciado sob a decisão de licenciamento pendente
-(ver `LICENSING.md`).
+contribuidores declarados, com direitos reservados nos termos de `LICENSE` e `LICENSING.md`, sem afetar direitos de terceiros.
 
 ## Consequências de ausência de registro
 

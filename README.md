@@ -242,7 +242,7 @@ organograma nesta versão.
 
 ## Licença
 
-MIT - Ver arquivo LICENSING.md para detalhes.
+Software proprietário — todos os direitos reservados. Repositório público não significa código aberto. Consulte [LICENSE](LICENSE) e [LICENSING.md](LICENSING.md).
 
 ---
 

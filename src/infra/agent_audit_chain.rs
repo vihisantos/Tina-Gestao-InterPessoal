@@ -161,3 +161,91 @@ pub(crate) async fn append_verified(
     .await?;
     tx.commit().await
 }
+
+/// Verifica o histórico persistido contra uma âncora obtida fora do SQLite.
+/// Chaves revogadas continuam válidas para verificação histórica.
+pub(crate) async fn verify_stored_history(
+    pool: &sqlx::SqlitePool,
+    credential_id: &str,
+    expected_head: Option<[u8; 32]>,
+) -> Result<bool, sqlx::Error> {
+    use sqlx::Row;
+    let mut tx = pool.begin().await?;
+    let public: Vec<u8> = sqlx::query_scalar(
+        "SELECT public_key FROM agent_credentials WHERE id=?",
+    )
+    .bind(credential_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let Ok(public) = <[u8; 32]>::try_from(public) else {
+        return Ok(false);
+    };
+    let Ok(key) = VerifyingKey::from_bytes(&public) else {
+        return Ok(false);
+    };
+    let rows = sqlx::query("SELECT * FROM agent_audit_events WHERE credential_id=?")
+        .bind(credential_id)
+        .fetch_all(&mut *tx)
+        .await?;
+    let mut previous: Option<[u8; 32]> = None;
+    let mut visited = std::collections::HashSet::new();
+    for _ in 0..rows.len() {
+        let mut next = None;
+        for (index, row) in rows.iter().enumerate() {
+            let parent: Option<Vec<u8>> = row.try_get("previous_digest")?;
+            if parent.as_deref() == previous.as_ref().map(|v| v.as_slice()) {
+                if next.is_some() {
+                    return Ok(false);
+                }
+                next = Some(index);
+            }
+        }
+        let Some(index) = next else {
+            return Ok(false);
+        };
+        if !visited.insert(index) {
+            return Ok(false);
+        }
+        let row = &rows[index];
+        let raw: Vec<u8> = row.try_get("payload_digest")?;
+        let Ok(payload_digest) = <[u8; 32]>::try_from(raw) else {
+            return Ok(false);
+        };
+        let p = AuditPayload {
+            id: row.try_get("id")?,
+            credential_id: row.try_get("credential_id")?,
+            task_id: row.try_get("task_id")?,
+            requester_id: row.try_get("requester_id")?,
+            delegator_id: row.try_get("delegator_id")?,
+            reviewer_id: row.try_get("reviewer_id")?,
+            action: row.try_get("action")?,
+            resource_type: row.try_get("resource_type")?,
+            resource_id: row.try_get("resource_id")?,
+            outcome: row.try_get("outcome")?,
+            reason: row.try_get("reason")?,
+            model_id: row.try_get("model_id")?,
+            model_version: row.try_get("model_version")?,
+            occurred_at: row.try_get("occurred_at")?,
+            nonce: row.try_get("nonce")?,
+            payload_digest,
+            previous_digest: previous,
+        };
+        let raw: Vec<u8> = row.try_get("event_digest")?;
+        let Ok(digest) = <[u8; 32]>::try_from(raw) else {
+            return Ok(false);
+        };
+        let raw: Vec<u8> = row.try_get("signature")?;
+        let Ok(signature) = <[u8; 64]>::try_from(raw) else {
+            return Ok(false);
+        };
+        if p.credential_id != credential_id
+            || p.digest().ok() != Some(digest)
+            || key.verify_strict(&digest, &Signature::from_bytes(&signature)).is_err()
+        {
+            return Ok(false);
+        }
+        previous = Some(digest);
+    }
+    tx.commit().await?;
+    Ok(previous == expected_head)
+}

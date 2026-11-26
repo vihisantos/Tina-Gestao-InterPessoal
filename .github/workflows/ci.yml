@@ -1,5 +1,6 @@
-# CI híbrida: verificações leves hospedadas; compilação e testes Windows locais.
-# Recomenda-se conta Windows isolada, sem privilégios administrativos; execução manual somente de código confiável.
+# CI hospedada pelo GitHub: verificações leves em Ubuntu e Rust/Tauri em Windows.
+# Build do aplicativo desktop, WebView, abertura de links e integração real com o cofre do Windows: validação local.
+# Teste local do cofre (conta de teste): cargo +stable test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
 # A compilação Rust depende da formatação; testes dependem da compilação.
 # Pull requests empilhados também são validados nas respectivas branches-base.
 name: ci
@@ -99,7 +100,7 @@ jobs:
     name: Rust and Tauri compilation (Windows)
     needs: rust-format
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
+    runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -116,7 +117,7 @@ jobs:
     name: Rust and Tauri tests (Windows)
     needs: rust-check
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
+    runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -128,8 +129,6 @@ jobs:
           rustup toolchain install stable --profile minimal
       - name: Run workspace tests
         run: cargo +stable test --workspace --locked
-      - name: Windows Credential Manager integration smoke
-        run: cargo +stable test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
 
   frontend:
     name: Svelte frontend validation

@@ -1,6 +1,8 @@
-# CI Windows em executor próprio dedicado, sem processamento hospedado.
-# Recomenda-se conta Windows isolada, sem privilégios administrativos; execução manual somente de código confiável.
-# A compilação Rust depende da formatação; testes dependem da compilação.
+# CI leve em Ubuntu hospedado pelo GitHub: governança, formatação Rust e frontend.
+# A validação nativa é local, fora do GitHub Actions, em conta Windows de teste isolada.
+# Comandos locais: cargo +stable check --workspace --locked; cargo +stable test --workspace --locked.
+# Executar também o build Tauri e os testes manuais de WebView, links e banco de dados.
+# Teste local do cofre (conta de teste): cargo +stable test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
 # Pull requests empilhados também são validados nas respectivas branches-base.
 name: ci
 
@@ -21,7 +23,7 @@ jobs:
   governance:
     name: governance checks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -30,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Required governance files exist and are non-empty
-        shell: powershell
+        shell: pwsh
         run: |
           $required = @(
             'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'LICENSING.md', '.gitignore',
@@ -38,13 +40,13 @@ jobs:
             'docs/spec/out-of-scope.md', 'docs/provenance/POLICY.md', 'docs/provenance/REGISTER.md'
           )
           foreach ($file in $required) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file -Force).Length -eq 0) {
               throw "falta ou esta vazio: $file"
             }
           }
 
       - name: No LICENSE file until the owner decides
-        shell: powershell
+        shell: pwsh
         run: |
           foreach ($file in @('LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING')) {
             if (Test-Path -LiteralPath $file -PathType Leaf) {
@@ -53,14 +55,14 @@ jobs:
           }
 
       - name: No secret-like files are tracked
-        shell: powershell
+        shell: pwsh
         run: |
           # Node preserves NUL-delimited Git paths, including spaces and Unicode.
           node -e "const {execFileSync}=require('node:child_process');const paths=execFileSync('git',['ls-files','-z']).toString('utf8').split('\0');const re=/(^|\/)(\.env(\..+)?|.+\.(pem|key|ppk|p12|pfx|jks|keystore))$/i;const bad=paths.filter(p=>re.test(p));if(bad.length){console.error('arquivos com nome/formato de segredo rastreados:',bad);process.exit(1)}"
           if ($LASTEXITCODE -ne 0) { throw 'falha na verificacao de nomes de arquivos' }
 
       - name: Secret-like content scan (tracked and staged)
-        shell: powershell
+        shell: pwsh
         run: |
           $pattern = '(-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})'
           # List only filenames, never matching secret values.
@@ -81,7 +83,7 @@ jobs:
   rust-format:
     name: Rust formatting
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -95,46 +97,10 @@ jobs:
       - name: Check formatting
         run: cargo +stable fmt --all -- --check
 
-  rust-check:
-    name: Rust and Tauri compilation (Windows)
-    needs: rust-format
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-      - name: Check workspace
-        run: cargo +stable check --workspace --locked
-
-  rust-tests:
-    name: Rust and Tauri tests (Windows)
-    needs: rust-check
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-      - name: Run workspace tests
-        run: cargo +stable test --workspace --locked
-      - name: Windows Credential Manager integration smoke
-        run: cargo +stable test -p tina --locked windows_vault_creates_256_bit_key_and_requires_password_after_restart -- --ignored --nocapture
-
   frontend:
     name: Svelte frontend validation
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, tina-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout

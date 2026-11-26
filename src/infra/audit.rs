@@ -143,7 +143,14 @@ pub(crate) async fn record_denied_position_change(
     installation_id: &str,
     employee_id: &str,
 ) -> Result<()> {
-    record_denied_owner_audit_write(pool, installation_id, "employee", employee_id, "position_change").await
+    record_denied_owner_audit_write(
+        pool,
+        installation_id,
+        "employee",
+        employee_id,
+        "position_change",
+    )
+    .await
 }
 
 /// Inicia transação de escrita com autoria obtida do contexto autenticado.

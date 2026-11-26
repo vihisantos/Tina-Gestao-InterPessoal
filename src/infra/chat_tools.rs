@@ -287,9 +287,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(app
-            .database()
-            .departments()
+        assert!(crate::infra::DepartmentRepository::new(app.database().pool())
             .list_by_company(&company.id)
             .await
             .unwrap()

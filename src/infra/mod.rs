@@ -9,6 +9,8 @@ mod company;
 mod db;
 mod department;
 mod employee;
+/// Execução experimental isolada de funcionários.
+pub mod employee_runtime;
 mod hierarchy;
 mod hr_contracts;
 mod hr_tools;

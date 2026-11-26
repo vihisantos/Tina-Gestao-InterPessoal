@@ -32,7 +32,7 @@ pub struct ModelEvaluation {
     pub cost: Option<f64>,
 }
 
-fn client(base: &str, timeout: u64) -> Result<reqwest::Client> {
+pub(super) fn client(base: &str, timeout: u64) -> Result<reqwest::Client> {
     if base != BASE {
         return Err(TinaError::Config("endpoint NVIDIA não autorizado".into()));
     }
@@ -141,7 +141,7 @@ fn tool_passed(value: &Value) -> bool {
         .is_some_and(|args| args == json!({"id": "demo-17"}))
 }
 
-async fn complete(client: &reqwest::Client, key: &str, payload: Value) -> Result<(Value, u64)> {
+pub(super) async fn complete(client: &reqwest::Client, key: &str, payload: Value) -> Result<(Value, u64)> {
     let started = Instant::now();
     let value = response_json(
         client
@@ -157,7 +157,7 @@ async fn complete(client: &reqwest::Client, key: &str, payload: Value) -> Result
 
 impl crate::TinaApp {
     #[cfg(windows)]
-    fn evaluation_key(&self) -> Result<String> {
+    pub(crate) fn evaluation_key(&self) -> Result<String> {
         let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
             .map_err(|_| TinaError::Inference("cofre NVIDIA indisponível".into()))?;
         let key = entry

@@ -24,6 +24,7 @@ pub struct ToolEntry {
 pub fn catalog() -> Vec<ToolEntry> {
     [
         ("create_position", "rh", "Propor criação de cargo", true),
+        ("list_positions", "rh", "Consultar cargos do próprio departamento", true),
         (
             "generate_contract",
             "rh",
@@ -348,7 +349,7 @@ pub(super) async fn decide(
         .map_err(|_| TinaError::Validation("proposta inválida".into()))?;
     apply(&mut tx, installation, owner, &t, &p.action, &keys, approved).await?;
     let content = if approved {
-        format!("Ferramentas {} para {}: {}. A configuração está registrada; o executor de agentes ainda não está integrado.", if assigning(&p.action) {"atribuídas"} else {"revogadas"}, t.employee_name, keys.join(", "))
+        format!("Ferramentas {} para {}: {}. A configuração está registrada; nesta etapa somente list_positions pode ser executada pelo funcionário.", if assigning(&p.action) {"atribuídas"} else {"revogadas"}, t.employee_name, keys.join(", "))
     } else {
         "Alteração recusada. Nenhum acesso foi modificado.".to_owned()
     };
@@ -365,7 +366,7 @@ mod tests {
 
     #[test]
     fn packages_do_not_grant_administration() {
-        assert_eq!(expand("assign_app", "rh").unwrap(), vec!["create_position"]);
+        assert_eq!(expand("assign_app", "rh").unwrap(), vec!["create_position", "list_positions"]);
         assert!(expand("assign_app", "administration").is_err());
         assert!(expand("assign_tool", "assign_tool").is_err());
         assert!(expand("assign_tool", "hire_employee").is_err());

@@ -103,6 +103,17 @@ fn chat_set_key(app: State<'_, TinaApp>, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn run_employee(
+    app: State<'_, TinaApp>,
+    employee_id: String,
+    task: String,
+) -> Result<tina::infra::employee_runtime::EmployeeRun, String> {
+    app.owner_run_employee(&employee_id, &task)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn nvidia_models(app: State<'_, TinaApp>) -> Result<Vec<String>, String> {
     app.owner_nvidia_models().await.map_err(|e| e.to_string())
 }
@@ -439,6 +450,7 @@ fn main() {
             chat_set_key,
             chat_has_key,
             nvidia_models,
+            run_employee,
             nvidia_evaluate_model,
             chat_delete_key,
             commands::owner_status,

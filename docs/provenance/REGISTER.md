@@ -44,3 +44,8 @@ Entradas futuras vão antes deste parágrafo inicial, em ordem cronológica.
 - Implementação original assistida por IA; migração 018 e aprovação pelo chat.
 - Minuta não concede ferramentas, não seleciona modelo e não efetiva contratação.
 - Revisão humana e testes nativos pendentes.
+
+## Executor experimental de funcionários — PR 74
+- Implementação original assistida por IA; usa o transporte NVIDIA existente e escopo SQLite autenticado.
+- Ação direta do proprietário; ferramenta de leitura list_positions somente mediante concessão. Sem contratação automática, agendamento, conectores MCP externos ou escrita por funcionário.
+- Revisão humana e validação Windows/NVIDIA pendentes.

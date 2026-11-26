@@ -50,7 +50,7 @@
   onMount(() => { void refresh(); return () => { epoch++; }; });
 </script>
 <Card title="Tools — aplicativos">
-  <p>Aplicativos agrupam ferramentas. Atribua ou revogue cada ferramenta ou pacote. Acesso configurado não significa execução automática por funcionários nesta versão.</p>
+  <p>Aplicativos agrupam ferramentas. Atribua ou revogue cada ferramenta ou pacote. Acesso configurado não significa execução automática. No executor experimental, somente a consulta de cargos está habilitada.</p>
   <div class="apps" aria-label="Aplicativos">
     {#each apps as app}
       <button type="button" aria-pressed={selectedApp === app.key} onclick={() => selectedApp = app.key} disabled={busy}>{app.name}</button>
@@ -81,7 +81,7 @@
         {:else}<span>Exclusiva da administração central</span>{/if}
       </div>
     {/each}
-    {#if selectedApp === 'rh'}<p>Minuta de contrato disponível na Tina Central. Avaliação sintética NVIDIA no backend; contratação e execução por funcionários ainda não disponíveis.</p>{/if}
+    {#if selectedApp === 'rh'}<p>Minuta de contrato disponível na Tina Central. Avaliação sintética NVIDIA no backend; contratação ainda não disponível. A consulta de cargos pode ser executada experimentalmente por funcionário.</p>{/if}
   {/if}
   <button type="button" disabled={busy || loading} onclick={refresh}>Atualizar</button>
 </Card>

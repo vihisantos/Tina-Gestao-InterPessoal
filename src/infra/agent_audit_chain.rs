@@ -249,3 +249,32 @@ pub(crate) async fn verify_stored_history(
     tx.commit().await?;
     Ok(previous == expected_head)
 }
+
+/// Âncora independente do SQLite, no cofre nativo do Windows.
+/// Ausência ou corrupção da âncora não equivale a histórico íntegro.
+#[cfg(target_os = "windows")]
+pub(crate) fn load_audit_anchor(
+    installation: uuid::Uuid,
+    credential: uuid::Uuid,
+) -> Result<[u8; 32], keyring::Error> {
+    let entry = keyring::Entry::new(
+        "Tina.AgentAudit.Anchor.v1",
+        &format!("{installation}/{credential}"),
+    )?;
+    entry.get_secret()?.try_into().map_err(|_| {
+        keyring::Error::Invalid("anchor".into(), "invalid digest length".into())
+    })
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn store_audit_anchor(
+    installation: uuid::Uuid,
+    credential: uuid::Uuid,
+    digest: &[u8; 32],
+) -> Result<(), keyring::Error> {
+    keyring::Entry::new(
+        "Tina.AgentAudit.Anchor.v1",
+        &format!("{installation}/{credential}"),
+    )?
+    .set_secret(digest)
+}

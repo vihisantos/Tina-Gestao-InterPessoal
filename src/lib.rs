@@ -22,6 +22,8 @@ pub mod core;
 pub mod error;
 
 pub mod infra;
+/// Motor central de planejamento, autorização e execução de ferramentas.
+pub mod orchestration;
 
 #[cfg(test)]
 mod tests;
@@ -602,7 +604,13 @@ impl TinaApp {
                     )
                     .await
                 }
-                infra::chat::NvidiaTurn::Tool(call) => {
+                infra::chat::NvidiaTurn::Tools(calls) => {
+                    if calls.len() != 1 {
+                        return Err(TinaError::ToolError(
+                            "múltiplas chamadas exigem um plano autorizado".into(),
+                        ));
+                    }
+                    let call = &calls[0];
                     let user = context
                         .last()
                         .ok_or_else(|| TinaError::ToolError("mensagem ausente".into()))?;

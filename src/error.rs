@@ -13,6 +13,10 @@ pub enum TinaError {
     #[error("erro de migração do banco de dados: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
 
+    /// Incompatibilidade de checksum que exige decisão explícita do operador.
+    #[error("incompatibilidade de checksum de migration: {0}")]
+    MigrationChecksumConflict(String),
+
     /// Falha de sistema de arquivos.
     #[error("erro de I/O: {0}")]
     Io(#[from] std::io::Error),

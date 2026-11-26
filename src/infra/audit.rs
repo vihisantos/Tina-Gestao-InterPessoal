@@ -140,10 +140,11 @@ pub(crate) async fn commit_owner_write(
     mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
     installation_id: &str,
 ) -> Result<()> {
-    let removed = sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
-        .bind(installation_id)
-        .execute(&mut *tx)
-        .await?;
+    let removed =
+        sqlx::query("DELETE FROM organizational_audit_actor_context WHERE installation_id = ?")
+            .bind(installation_id)
+            .execute(&mut *tx)
+            .await?;
     if removed.rows_affected() != 1 {
         return Err(crate::error::TinaError::Other(
             "contexto de auditoria ausente".into(),

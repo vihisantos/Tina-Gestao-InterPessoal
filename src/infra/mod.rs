@@ -9,6 +9,7 @@ mod department;
 mod employee;
 mod hierarchy;
 mod installation;
+pub mod migration_repair;
 mod position;
 mod redis;
 mod telemetry;

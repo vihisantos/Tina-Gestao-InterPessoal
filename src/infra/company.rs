@@ -300,9 +300,7 @@ impl<'a> CompanyRepository<'a> {
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() == 0 {
-            return Err(TinaError::Unauthorized(
-                "empresa fora da instalação".into(),
-            ));
+            return Err(TinaError::Unauthorized("empresa fora da instalação".into()));
         }
         commit_owner_write(tx, installation_id).await
     }

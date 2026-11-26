@@ -428,9 +428,7 @@ impl<'a> PositionRepository<'a> {
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() == 0 {
-            return Err(TinaError::Unauthorized(
-                "cargo fora da instalação".into(),
-            ));
+            return Err(TinaError::Unauthorized("cargo fora da instalação".into()));
         }
         commit_owner_write(tx, installation_id).await
     }
@@ -467,9 +465,7 @@ impl<'a> PositionRepository<'a> {
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() == 0 {
-            return Err(TinaError::Unauthorized(
-                "cargo fora da instalação".into(),
-            ));
+            return Err(TinaError::Unauthorized("cargo fora da instalação".into()));
         }
         commit_owner_write(tx, installation_id).await
     }

@@ -10,6 +10,7 @@ mod db;
 mod department;
 mod employee;
 mod hierarchy;
+mod hr_contracts;
 mod hr_tools;
 mod installation;
 /// Catálogo e testes sintéticos NVIDIA.

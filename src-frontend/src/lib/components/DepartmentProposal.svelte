@@ -34,11 +34,11 @@
   }
 </script>
 {#if proposal}
-  <Card title={proposal.tool_name.startsWith('assign_') ? 'Autorizar atribuição de ferramentas?' : proposal.tool_name.startsWith('revoke_') ? 'Autorizar revogação de ferramentas?' : proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : proposal.tool_name === 'create_position' ? 'Posso criar este cargo?' : 'Posso criar este departamento?'}>
+  <Card title={proposal.tool_name.startsWith('assign_') ? 'Autorizar atribuição de ferramentas?' : proposal.tool_name.startsWith('revoke_') ? 'Autorizar revogação de ferramentas?' : proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : proposal.tool_name === 'create_position' ? 'Posso criar este cargo?' : proposal.tool_name === 'generate_contract' ? 'Posso salvar esta minuta de contrato?' : 'Posso criar este departamento?'}>
     <p><strong>{proposal.name}</strong>{#if proposal.code} ({proposal.code}){/if}</p>
     <p>{proposal.tool_name !== 'create_organization' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
     {#if proposal.reason}<p><strong>Por que a Tina sugere:</strong> {proposal.reason}</p>{/if}
-    {#if proposal.description}<p>{proposal.description}</p>{/if}
+    {#if proposal.description}<p class="description">{proposal.description}</p>{/if}
     <p>A alteração será registrada no banco somente após sua autorização.</p>
     <div class="actions">
       <button type="button" disabled={busy} onclick={() => decide(true)}>Confirmar</button>
@@ -48,6 +48,7 @@
 {/if}
 {#if error}<p role="alert">{error}</p>{/if}
 <style>
+  .description { white-space: pre-wrap; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   button { font: inherit; padding: .65rem; border: 1px solid var(--tina-border-strong); border-radius: var(--tina-radius-sm); background: var(--tina-surface); color: inherit; }
   button:focus-visible { outline: 2px solid var(--tina-pink); }

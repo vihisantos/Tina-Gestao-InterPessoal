@@ -39,3 +39,8 @@ Entradas futuras vão antes deste parágrafo inicial, em ordem cronológica.
 - Testes sintéticos de aritmética e chamada de ferramenta simulada, sem dados privados.
 - Não é avaliação de aptidão profissional completa; custo desconhecido e contratação ainda bloqueada.
 - Revisão humana e validação Rust/Windows e NVIDIA pendentes.
+
+## Minutas operacionais de RH — PR 74
+- Implementação original assistida por IA; migração 018 e aprovação pelo chat.
+- Minuta não concede ferramentas, não seleciona modelo e não efetiva contratação.
+- Revisão humana e testes nativos pendentes.

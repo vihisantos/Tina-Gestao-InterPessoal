@@ -29,6 +29,14 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<td>1</td>');
   });
 
+  it('transforma URLs web explícitas em links, sem ativar domínios soltos ou código', () => {
+    const { html } = renderMarkdown('Visite https://github.com/ e example.com. `https://example.org/`');
+    expect(html).toContain('href="https://github.com/"');
+    expect(html).toContain('class="tina-safe-link"');
+    expect(html).not.toContain('href="http://example.com"');
+    expect(html).not.toContain('href="https://example.org/"');
+  });
+
   it('permite apenas links http(s) e bloqueia URLs perigosas', () => {
     const source = [
       '[Site seguro](https://example.com/docs)',

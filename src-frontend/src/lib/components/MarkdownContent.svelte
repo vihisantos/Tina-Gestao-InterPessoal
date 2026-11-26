@@ -1,11 +1,13 @@
 <script lang="ts">
   import { mount, unmount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
   import MermaidDiagram from './MermaidDiagram.svelte';
   import { renderMarkdown } from '../chat/markdown';
 
   let { content = '', streaming = false }: { content?: string; streaming?: boolean } = $props();
 
   let container: HTMLDivElement | undefined = $state();
+  let linkError = $state(false);
   let diagrams: Array<{ target: Element; instance: Record<string, unknown> }> = [];
 
   const rendered = $derived(renderMarkdown(content, { renderDiagrams: !streaming }));
@@ -54,6 +56,28 @@
     }, 1500);
   }
 
+  async function handleClick(event: MouseEvent) {
+    const target = event.target instanceof Element ? event.target : null;
+    const link = target?.closest<HTMLAnchorElement>('a');
+    if (!link || !container?.contains(link)) {
+      if (event.type === 'click') await handleCopy(event);
+      return;
+    }
+
+    // Nunca navegar a WebView para conteúdo remoto, inclusive no clique do meio.
+    event.preventDefault();
+    if (event.type === 'auxclick' && event.button !== 1) return;
+    const href = link.getAttribute('href') ?? '';
+    if (!link.classList.contains('tina-safe-link') || !/^https?:\/\//i.test(href)) return;
+
+    linkError = false;
+    try {
+      await invoke('chat_open_link', { url: href });
+    } catch {
+      linkError = true;
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const target = event.target instanceof Element ? event.target : null;
@@ -69,10 +93,14 @@
   role="group"
   aria-label="Conteúdo da mensagem"
   bind:this={container}
-  onclick={handleCopy}
+  onclick={handleClick}
+  onauxclick={handleClick}
   onkeydown={handleKeydown}
 >
   {@html rendered.html}
+  {#if linkError}
+    <p role="alert">Não foi possível abrir o link no navegador padrão.</p>
+  {/if}
 </div>
 
 <style>

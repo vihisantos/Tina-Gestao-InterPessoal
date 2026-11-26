@@ -1,0 +1,3 @@
+# SQLx calcula checksums sobre os bytes das migrations.
+# Preservar LF em todos os sistemas, inclusive no checkout do Windows.
+/migration/*.sql text eol=lf

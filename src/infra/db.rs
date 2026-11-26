@@ -22,7 +22,21 @@ pub struct Database {
 
 impl Database {
     /// Abre (ou cria) o banco em `path` e aplica as migrations versionadas.
+    ///
+    /// A inicialização normal é rigorosa: qualquer divergência de checksum
+    /// aborta o startups e aponta a ferramenta explícita de recuperação.
+    /// Nunca há reparo automático durante a abertura do aplicativo.
     pub async fn open(path: &Path) -> Result<Self> {
+        Self::open_inner(path, false).await
+    }
+
+    /// Variante usada apenas pela ferramenta explícita de recuperação e pelos
+    /// testes de regressão. Não é chamada pelo caminho normal de startup.
+    pub async fn open_with_checksum_repair(path: &Path, allow_repair: bool) -> Result<Self> {
+        Self::open_inner(path, allow_repair).await
+    }
+
+    async fn open_inner(path: &Path, allow_repair: bool) -> Result<Self> {
         // `busy_timeout` faz transações concorrentes esperarem o lock de
         // escrita em vez de falharem imediatamente. A hierarquia usa
         // `BEGIN IMMEDIATE`, então esse é o tempo máximo de espera por uma
@@ -39,7 +53,27 @@ impl Database {
             .connect_with(options)
             .await?;
 
-        sqlx::migrate!("./migration").run(&pool).await?;
+        let migrator = sqlx::migrate!("./migration");
+        let report = crate::infra::migration_repair::reconcile_checksums(
+            &pool,
+            &migrator,
+            path,
+            allow_repair,
+        )
+        .await?;
+        if !report.repaired_versions.is_empty() {
+            eprintln!(
+                "Tina: checksum das migrations {:?} reconciliado (apenas LF/CRLF). Backup verificado em {}",
+                report.repaired_versions,
+                report
+                    .backup_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "<desconhecido>".to_string())
+            );
+        }
+
+        migrator.run(&pool).await?;
 
         Ok(Self { pool })
     }

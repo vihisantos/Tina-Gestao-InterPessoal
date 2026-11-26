@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MarkdownContent from '../src/lib/components/MarkdownContent.svelte';
 import MermaidDiagram from '../src/lib/components/MermaidDiagram.svelte';
 
-const { initializeMock, renderMock } = vi.hoisted(() => ({
+const { initializeMock, renderMock, invokeMock } = vi.hoisted(() => ({
   initializeMock: vi.fn(),
-  renderMock: vi.fn()
+  renderMock: vi.fn(),
+  invokeMock: vi.fn()
 }));
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
 vi.mock('mermaid', () => ({
   default: {
@@ -16,6 +19,8 @@ vi.mock('mermaid', () => ({
 }));
 
 beforeEach(() => {
+  invokeMock.mockReset();
+  invokeMock.mockResolvedValue(undefined);
   renderMock.mockImplementation(async (_id: string, code: string) => {
     if (code.includes('INVALID')) throw new Error('diagrama inválido');
     return {
@@ -57,6 +62,31 @@ describe('MermaidDiagram', () => {
 });
 
 describe('MarkdownContent', () => {
+  it('encaminha links web ao backend sem navegar a WebView', async () => {
+    const view = render(MarkdownContent, {
+      props: { content: '[GitHub](https://github.com/)' }
+    });
+    const link = view.getByRole('link', { name: 'GitHub' });
+    expect(invokeMock).not.toHaveBeenCalled();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    await fireEvent(link, event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('chat_open_link', { url: 'https://github.com/' });
+  });
+
+  it('não abre links bloqueados e informa falha de abertura', async () => {
+    const view = render(MarkdownContent, {
+      props: { content: '[Relativo](/arquivo) [GitHub](https://github.com/)' }
+    });
+    const blocked = view.container.querySelector('.tina-blocked-link');
+    expect(blocked).not.toBeNull();
+    await fireEvent.click(blocked!);
+    expect(invokeMock).not.toHaveBeenCalled();
+    invokeMock.mockRejectedValueOnce(new Error('falha'));
+    await fireEvent.click(view.getByRole('link', { name: 'GitHub' }));
+    await waitFor(() => expect(view.getByRole('alert')).toBeTruthy());
+  });
+
   it('adiciona botão de copiar aos blocos de código', async () => {
     const view = render(MarkdownContent, {
       props: { content: '```js\nconst resposta = 42;\n```' }

@@ -29,3 +29,42 @@ pub(crate) async fn require_tool_permission(
     }
     Ok(())
 }
+
+/// Ponto de entrada interno para adaptadores de ferramentas.
+/// O contexto deve ser obtido pelo backend, nunca dos argumentos do modelo.
+/// A operação só é construída após autorização bem-sucedida.
+pub(crate) async fn execute_authorized<T, F, Fut>(
+    pool: &SqlitePool,
+    installation_id: &str,
+    employee_id: &str,
+    tool: &str,
+    resource_scope: &str,
+    operation: F,
+) -> Result<T, sqlx::Error>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, sqlx::Error>>,
+{
+    require_tool_permission(pool, installation_id, employee_id, tool, resource_scope).await?;
+    operation().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[tokio::test]
+    async fn database_failure_never_executes_tool() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let executed = AtomicBool::new(false);
+        let result = execute_authorized(
+            &pool, "installation", "employee", "tool", "resource", || async {
+                executed.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        ).await;
+        assert!(result.is_err());
+        assert!(!executed.load(Ordering::SeqCst));
+    }
+}

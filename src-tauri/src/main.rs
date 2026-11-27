@@ -393,6 +393,64 @@ async fn chat_cancel_proposal(
 }
 
 #[tauri::command]
+async fn chat_pending_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+) -> Result<Option<tina::orchestration::plan::PlanCard>, String> {
+    app.owner_pending_plan(&session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_decide_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    fingerprint: String,
+    approved: bool,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_decide_plan(&session_id, &plan_id, &fingerprint, approved)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_resume_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_resume_plan(&session_id, &plan_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_cancel_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    reason: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_cancel_plan(&session_id, &plan_id, &reason)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_supersede_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    reason: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_supersede_plan(&session_id, &plan_id, &reason)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_cancel(
     app: State<'_, TinaApp>,
     run: State<'_, ChatRun>,
@@ -452,6 +510,11 @@ fn main() {
             chat_generate,
             chat_pending_department,
             chat_decide_department,
+            chat_pending_plan,
+            chat_decide_plan,
+            chat_resume_plan,
+            chat_cancel_plan,
+            chat_supersede_plan,
             list_tool_catalog,
             list_tool_grants,
             change_tool_access,

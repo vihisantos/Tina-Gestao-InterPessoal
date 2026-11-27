@@ -16,7 +16,7 @@ com `CRLF` e com `LF` produz hashes diferentes.
 O banco ativo da instalação atual (`%APPDATA%\tina\tina.db`) foi reparado
 anteriormente, com autorização explícita, para as versões `[1, 7, 8, 9, 10, 11]`.
 Ele **não precisa de novo reparo de checksum nesta etapa** e não foi alterado.
-Ao distribuir esta branch, ele precisará receber as migrations 12 a 20 pela
+Ao distribuir esta branch, ele precisará receber as migrations 12 a 21 pela
 inicialização normal; faça backup antes. Não execute a ferramenta “por
 precaução”.
 
@@ -130,12 +130,15 @@ Migrations embutidas na versão final:
 | 18 | `018_chat_contract_drafts.sql` |
 | 19 | `019_proposal_lifecycle.sql` |
 | 20 | `020_proposal_lifecycle_rh.sql` |
+| 21 | `021_tool_orchestration.sql` |
 
 As versões 16, 17 e 18 vêm da PR #74; a 19 foi reservada pela PR #73 para não
 colidir com essa numeração. A 20 unifica o ciclo de vida das cinco famílias de
 propostas (departamento, organização, cargo, acesso a ferramentas e minuta).
-Nenhuma migration já publicada foi editada: todas são aditivas e forward-only.
-As migrations 019 e 020 preservam a coluna legada `status` como espelho e tornam
+A 21 adiciona planos, etapas, dependências, resultados e o histórico de
+chamadas de ferramentas sem alterar tabelas já publicadas. Nenhuma migration
+já publicada foi editada: todas são aditivas e forward-only. As migrations
+019 e 020 preservam a coluna legada `status` como espelho e tornam
 `lifecycle_status` a fonte autoritativa das propostas.
 
 ## Cobertura automatizada de upgrade
@@ -152,6 +155,8 @@ incorporadas, limitando o `Migrator` até a versão desejada. Os testes cobrem:
 - upgrade de v19 com backfill de `lifecycle_status` nas propostas de cargo,
   acesso e minuta da PR #74, mantendo uma única proposta ativa por sessão e
   aplicando as migrations 16 a 18 em bancos que já tinham a 19;
+- upgrade de v20 com criação aditiva das tabelas de plano e das colunas de
+  histórico `tool_call_id`/`tool_calls_json`, preservando conversas antigas;
 - divergência apenas LF/CRLF: startup falha sem tocar no banco; a ferramenta
   explícita cria backup verificado e repara somente o checksum;
 - divergência real de SQL: nem a inicialização nem a ferramenta explícita
@@ -167,7 +172,7 @@ Nenhum teste apaga `tina.db`, WAL/SHM, TOML ou credenciais reais.
 python -c "import os,sqlite3; p=os.path.join(os.environ['APPDATA'],'tina','tina.db'); c=sqlite3.connect('file:'+p.replace('\\\\','/')+'?mode=ro',uri=True); print(c.execute('PRAGMA integrity_check').fetchone()[0]); print(c.execute('SELECT version FROM _sqlx_migrations ORDER BY version').fetchall())"
 ```
 
-Nesta branch o journal esperado é `1..20`. Se retornar `ok` com esse conjunto,
+Nesta branch o journal esperado é `1..21`. Se retornar `ok` com esse conjunto,
 o banco está consistente e não deve ser modificado. Bancos que ainda estão em
 `1..11` devem ser atualizados pela inicialização normal, com backup. Um journal
 em `1..15` ou `1..15,19` recebe as migrations restantes de forma aditiva, sem

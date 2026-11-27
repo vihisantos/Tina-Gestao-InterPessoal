@@ -50,6 +50,10 @@ pub struct ChatMessage {
     pub content: String,
     /// Data de criação.
     pub created_at: String,
+    /// Identificador da chamada NVIDIA quando a mensagem representa um resultado de ferramenta.
+    pub tool_call_id: Option<String>,
+    /// Chamadas NVIDIA serializadas quando a mensagem representa um pedido de ferramentas.
+    pub tool_calls_json: Option<String>,
 }
 
 pub(crate) async fn create_session(
@@ -184,7 +188,7 @@ pub(crate) async fn append_message_with_id(
     .execute(&mut *tx)
     .await?;
     let message = sqlx::query_as(
-        "SELECT id, role, content, created_at FROM chat_messages
+        "SELECT id, role, content, created_at, tool_call_id, tool_calls_json FROM chat_messages
          WHERE id = ? AND installation_id = ? AND session_id = ? AND role = ? AND content = ?",
     )
     .bind(id)
@@ -209,8 +213,8 @@ pub(crate) async fn list_messages(
     session: &str,
 ) -> Result<Vec<ChatMessage>> {
     Ok(sqlx::query_as(
-        "SELECT id, role, content, created_at FROM (
-             SELECT m.id, m.role, m.content, m.created_at, m.rowid AS message_order
+        "SELECT id, role, content, created_at, tool_call_id, tool_calls_json FROM (
+             SELECT m.id, m.role, m.content, m.created_at, m.tool_call_id, m.tool_calls_json, m.rowid AS message_order
              FROM chat_messages m
              JOIN chat_sessions s ON s.id = m.session_id AND s.installation_id = m.installation_id
              WHERE s.id = ? AND s.installation_id = ?
@@ -258,6 +262,22 @@ pub fn build_nvidia_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value>
         "content": TINA_SYSTEM_PROMPT,
     }));
     payload.extend(messages.iter().map(|m| {
+        if let Some(call_id) = &m.tool_call_id {
+            return serde_json::json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": m.content
+            });
+        }
+        if let Some(calls) = &m.tool_calls_json {
+            let parsed = serde_json::from_str::<serde_json::Value>(calls)
+                .unwrap_or_else(|_| serde_json::json!([]));
+            return serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": parsed
+            });
+        }
         serde_json::json!({
             "role": m.role,
             "content": m.content
@@ -291,6 +311,8 @@ mod context_tests {
             role: role.into(),
             content: content.into(),
             created_at: String::new(),
+            tool_call_id: None,
+            tool_calls_json: None,
         }
     }
 

@@ -10,3 +10,13 @@
 //! do proprietário.
 
 pub mod calls;
+/// Dependências determinísticas e referências simbólicas.
+pub mod dependencies;
+/// Execução sequencial com retomada e recuperação.
+pub mod executor;
+/// Histórico compatível com `assistant.tool_calls` e `role: tool`.
+pub mod history;
+/// Modelos imutáveis de plano e etapas.
+pub mod plan;
+/// Persistência transacional de planos, etapas e auditoria.
+pub mod store;

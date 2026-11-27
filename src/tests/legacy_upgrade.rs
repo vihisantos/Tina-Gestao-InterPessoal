@@ -394,6 +394,51 @@ async fn upgrade_from_v19_unifies_rh_proposal_lifecycle_after_019() {
 }
 
 #[tokio::test]
+async fn upgrade_from_v20_creates_tool_orchestration_schema_preserving_chats() {
+    let dir = tmp("v20-tool-orchestration");
+    let path = dir.join("tina.db");
+    seed_legacy_db(&path, 20).await;
+    assert_eq!(versions(&path).await, (1..=20).collect::<Vec<_>>());
+    {
+        let pool = raw_pool(&path).await;
+        sqlx::query("INSERT INTO installations(id,name,root_path,version,owner_uuid) VALUES ('inst-legacy','Legacy','/tmp/legacy','0.1.0','owner-legacy')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_sessions(id,installation_id,title,created_at,updated_at) VALUES ('session-legacy','inst-legacy','Legado','2026-01-01 00:00:00','2026-01-01 00:00:00')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_messages(id,session_id,installation_id,role,content,created_at) VALUES ('msg-legacy','session-legacy','inst-legacy','user','Conversa antiga','2026-01-01 00:00:00')")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+    }
+
+    let db = Database::open(&path).await.unwrap();
+    assert_eq!(versions(&path).await, expected_versions());
+    let plans: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chat_tool_plans'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(plans, 1);
+    let message_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') \
+         WHERE name IN ('tool_call_id','tool_calls_json')",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(message_columns, 2);
+    let content: String =
+        sqlx::query_scalar("SELECT content FROM chat_messages WHERE id='msg-legacy'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(content, "Conversa antiga");
+    drop(db);
+    integrity_ok(&path).await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn startup_refuses_checksum_drift_and_explicit_repair_creates_backup() {
     let dir = tmp("eol");
     let path = dir.join("tina.db");

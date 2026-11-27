@@ -12,6 +12,7 @@
   import DepartmentProposal from '$lib/components/DepartmentProposal.svelte';
   import OrganizationDirectory from '$lib/components/OrganizationDirectory.svelte';
   import ToolsDirectory from '$lib/components/ToolsDirectory.svelte';
+  import ToolPlanCard from '$lib/components/ToolPlanCard.svelte';
 
   type BootstrapInfo = {
     version: string;
@@ -35,7 +36,7 @@
   let ownerError = $state<string | null>(null);
 
   type ChatSession = { id: string; title: string; created_at: string };
-  type ChatMessage = { id: string; role: string; content: string; created_at: string };
+  type ChatMessage = { id: string; role: string; content: string; created_at: string; tool_call_id?: string | null; tool_calls_json?: string | null };
   type ChatLimits = { maxUserMessageBytes: number };
   let chats = $state<ChatSession[]>([]);
   let selected = $state('');
@@ -546,6 +547,7 @@
             <ChatHistory {messages} {partial} loading={chatLoading} {generating} {cancelling} greeting={initialGreeting} />
           {/key}
           {#if selected}
+            <ToolPlanCard sessionId={selected} lastMessageId={messages.at(-1)?.id ?? ''} ondecision={(message) => { messages = [...messages.filter(m => m.id !== message.id), message]; }} />
             <DepartmentProposal sessionId={selected} lastMessageId={messages.at(-1)?.id ?? ''} ondecision={(message) => { messages = [...messages.filter(m => m.id !== message.id), message]; }} />
           {/if}
           {#if chatError}<p role="alert" class="error">{chatError}</p>{/if}

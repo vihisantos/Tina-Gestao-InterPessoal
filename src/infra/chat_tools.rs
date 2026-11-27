@@ -179,7 +179,7 @@ pub(super) async fn assistant(
     sqlx::query("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ? AND installation_id = ?")
         .bind(session).bind(installation).execute(&mut **tx).await?;
     Ok(
-        sqlx::query_as("SELECT id, role, content, created_at FROM chat_messages WHERE id = ?")
+        sqlx::query_as("SELECT id, role, content, created_at, tool_call_id, tool_calls_json FROM chat_messages WHERE id = ?")
             .bind(id)
             .fetch_one(&mut **tx)
             .await?,
@@ -346,7 +346,7 @@ async fn result_message(
     message: &str,
 ) -> Result<ChatMessage> {
     Ok(sqlx::query_as(
-        "SELECT id,role,content,created_at FROM chat_messages \
+        "SELECT id,role,content,created_at,tool_call_id,tool_calls_json FROM chat_messages \
              WHERE id = ? AND installation_id = ? AND session_id = ?",
     )
     .bind(message)
@@ -373,6 +373,7 @@ fn same_organization(p: &DepartmentProposal, args: &OrganizationArgs) -> bool {
         && p.reason.as_deref() == Some(args.reason.as_str())
 }
 
+/// Caminho legado: exige que a mensagem de origem seja a mais recente da sessão.
 pub(crate) async fn propose(
     pool: &SqlitePool,
     installation: &str,
@@ -390,36 +391,65 @@ pub(crate) async fn propose(
             "mensagem de origem indisponível".into(),
         ));
     }
+    let response = propose_in(&mut tx, installation, session, user, name, arguments).await?;
+    tx.commit().await?;
+    Ok(response)
+}
+
+/// Caminho do orquestrador: a origem foi validada quando o plano imutável foi
+/// criado, então etapas posteriores não precisam ser a mensagem mais recente.
+pub(crate) async fn propose_for_plan(
+    pool: &SqlitePool,
+    installation: &str,
+    session: &str,
+    user: &str,
+    name: &str,
+    arguments: &str,
+) -> Result<ChatMessage> {
+    let mut tx = pool.begin().await?;
+    let origin: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM chat_messages WHERE id=? AND installation_id=? AND session_id=? AND role='user'",
+    )
+    .bind(user)
+    .bind(installation)
+    .bind(session)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if origin.is_none() {
+        return Err(TinaError::Unauthorized(
+            "mensagem de origem indisponível".into(),
+        ));
+    }
+    let response = propose_in(&mut tx, installation, session, user, name, arguments).await?;
+    tx.commit().await?;
+    Ok(response)
+}
+
+async fn propose_in(
+    tx: &mut Transaction<'_, Sqlite>,
+    installation: &str,
+    session: &str,
+    user: &str,
+    name: &str,
+    arguments: &str,
+) -> Result<ChatMessage> {
     if name == "create_organization" {
         let args = parse_organization(arguments)?;
-        let response = propose_organization(&mut tx, installation, session, user, &args).await?;
-        tx.commit().await?;
-        return Ok(response);
+        return propose_organization(tx, installation, session, user, &args).await;
     }
     if super::tool_access::is_management(name) {
-        let response =
-            super::tool_access::propose(&mut tx, installation, session, user, name, arguments)
-                .await?;
-        tx.commit().await?;
-        return Ok(response);
+        return super::tool_access::propose(tx, installation, session, user, name, arguments).await;
     }
     if name == "generate_contract" {
-        let response =
-            super::hr_contracts::propose(&mut tx, installation, session, user, arguments).await?;
-        tx.commit().await?;
-        return Ok(response);
+        return super::hr_contracts::propose(tx, installation, session, user, arguments).await;
     }
     if name == "create_position" {
-        let response =
-            super::hr_tools::propose_position(&mut tx, installation, session, user, arguments)
-                .await?;
-        tx.commit().await?;
-        return Ok(response);
+        return super::hr_tools::propose_position(tx, installation, session, user, arguments).await;
     }
     let args = parse(name, arguments)?;
     let organizations: Vec<(String, String)> = sqlx::query_as(
         "SELECT id, name FROM companies WHERE installation_id = ? AND kind = ? AND status = 'active'"
-    ).bind(installation).bind(&args.organization_kind).fetch_all(&mut *tx).await?;
+    ).bind(installation).bind(&args.organization_kind).fetch_all(&mut **tx).await?;
     let mut matching = organizations.iter().filter(|(_, name)| {
         args.company_name
             .as_ref()
@@ -436,50 +466,40 @@ pub(crate) async fn propose(
                     args.name
                 ),
             };
-            let response =
-                propose_organization(&mut tx, installation, session, user, &personal).await?;
-            tx.commit().await?;
-            return Ok(response);
+            return propose_organization(tx, installation, session, user, &personal).await;
         }
         let message = if args.organization_kind == "personal" {
             "Não encontrei uma organização pessoal ativa correspondente. Cadastre sua organização Pessoal na área Organizações antes de criar o departamento."
         } else {
             "Não encontrei uma organização empresarial ativa e inequívoca com esse nome. Confira o cadastro na área Organizações e informe o nome exato."
         };
-        let response = assistant(&mut tx, installation, session, message).await?;
-        tx.commit().await?;
-        return Ok(response);
+        return assistant(tx, installation, session, message).await;
     }
     let (company_id, company_name) = organization.unwrap();
     let existing: Vec<(String, String)> =
         sqlx::query_as("SELECT name,code FROM departments WHERE company_id = ?")
             .bind(company_id)
-            .fetch_all(&mut *tx)
+            .fetch_all(&mut **tx)
             .await?;
     if existing.iter().any(|(name, code)| {
         name.to_lowercase() == args.name.to_lowercase() || code.eq_ignore_ascii_case(&args.code)
     }) {
-        let response = assistant(&mut tx, installation, session,
-            "Já existe um departamento com esse nome ou código nessa organização. Não vou propor uma duplicação; podemos verificar o cadastro existente.").await?;
-        tx.commit().await?;
-        return Ok(response);
+        return assistant(tx, installation, session,
+            "Já existe um departamento com esse nome ou código nessa organização. Não vou propor uma duplicação; podemos verificar o cadastro existente.").await;
     }
-    if let Some(active) = pending_in(&mut tx, installation, session).await? {
+    if let Some(active) = pending_in(tx, installation, session).await? {
         if same_department(&active, &args, company_id) {
-            let response = assistant(&mut tx, installation, session,
-                "Essa proposta já está pendente nesta conversa. Revise o cartão e confirme, recuse ou cancele antes de sugerir outra.").await?;
-            tx.commit().await?;
-            return Ok(response);
+            return assistant(tx, installation, session,
+                "Essa proposta já está pendente nesta conversa. Revise o cartão e confirme, recuse ou cancele antes de sugerir outra.").await;
         }
     }
-    let response = assistant(&mut tx, installation, session,
+    let response = assistant(tx, installation, session,
         "Identifiquei uma possibilidade de organização. Posso criar este departamento? Revise a proposta e confirme ou recuse. Ainda não criei nada.").await?;
     // O gatilho da migration 019 marca a proposta anterior como `superseded`.
     sqlx::query("INSERT INTO chat_department_proposals(id,installation_id,session_id,user_message_id,proposal_message_id,company_id,company_name,organization_kind,name,code,description,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
         .bind(Uuid::new_v4().to_string()).bind(installation).bind(session).bind(user)
         .bind(&response.id).bind(company_id).bind(company_name).bind(&args.organization_kind)
-        .bind(&args.name).bind(&args.code).bind(&args.description).bind(&args.reason).execute(&mut *tx).await?;
-    tx.commit().await?;
+        .bind(&args.name).bind(&args.code).bind(&args.description).bind(&args.reason).execute(&mut **tx).await?;
     Ok(response)
 }
 

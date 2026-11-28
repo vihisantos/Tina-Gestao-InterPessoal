@@ -109,6 +109,29 @@ where
                     &result,
                 )
                 .await?;
+                if result.get("status").and_then(Value::as_str) == Some("pending") {
+                    store::pause_step_for_approval(
+                        pool,
+                        installation,
+                        plan_id,
+                        &step.id,
+                        &result,
+                        &message.id,
+                    )
+                    .await?;
+                    store::pause_plan_for_approval(pool, installation, session, plan_id)
+                        .await?;
+                    let paused_plan = store::load_plan(pool, installation, session, plan_id)
+                        .await?
+                        .ok_or_else(|| TinaError::Other("plano não encontrado ao pausar".into()))?;
+                    return Ok(ExecutionSummary {
+                        plan: paused_plan,
+                        executed,
+                        failed,
+                        skipped,
+                        final_answer: None,
+                    });
+                }
                 store::complete_step(pool, installation, plan_id, &step.id, &result, &message.id)
                     .await?;
                 results.insert(step.tool_call_id.clone(), result);

@@ -651,11 +651,13 @@ async fn pending_owner_proposal_pauses_plan_without_auto_approval() {
     let _ = std::fs::remove_file(path);
 }
 
-
 #[tokio::test]
 async fn planning_does_not_supersede_unrelated_pending_proposals() {
-    let (app, path, session, user) =
-        setup("preserve-pending", "Prepare uma ação e mantenha decisões separadas.").await;
+    let (app, path, session, user) = setup(
+        "preserve-pending",
+        "Prepare uma ação e mantenha decisões separadas.",
+    )
+    .await;
     let installation = &app.config().installation_id;
 
     crate::infra::chat_tools::propose_for_plan(

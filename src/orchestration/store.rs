@@ -48,28 +48,12 @@ pub async fn create_plan(
         )));
     }
 
-    // Propostas avulsas pendentes são substituídas de forma explícita e
-    // auditável pelo plano, que passa a ser a única porta de autorização.
-    for table in [
-        "chat_department_proposals",
-        "chat_organization_proposals",
-        "chat_position_proposals",
-        "chat_tool_access_proposals",
-        "chat_contract_drafts",
-    ] {
-        let query = format!(
-            "UPDATE {table} SET status='rejected', lifecycle_status='superseded', \
-             superseded_by=?, decided_at=datetime('now'), updated_at=datetime('now') \
-             WHERE installation_id=? AND session_id=? AND lifecycle_status='pending'"
-        );
-        sqlx::query(&query)
-            .bind(&plan_id)
-            .bind(installation)
-            .bind(session)
-            .execute(&mut *tx)
-            .await?;
-    }
-
+    // Não altere propostas avulsas pendentes nesta etapa. Um plano novo pode
+    // conter apenas parte das intenções da conversa; superseder todas as
+    // propostas da sessão apagaria decisões ainda aguardando o proprietário.
+    // A vinculação correta ocorre quando cada etapa cria/retoma sua própria
+    // proposta por `proposal_message_id`, e a substituição explícita de um
+    // plano continua disponível em `supersede_plan`.
     sqlx::query(
         "INSERT INTO chat_tool_plans(id,installation_id,session_id,user_message_id,state,\
          fingerprint,calls_json,steps_count,max_calls,max_rounds,max_tokens_estimate,tokens_estimate) \

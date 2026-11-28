@@ -650,3 +650,74 @@ async fn pending_owner_proposal_pauses_plan_without_auto_approval() {
     drop(app);
     let _ = std::fs::remove_file(path);
 }
+
+
+#[tokio::test]
+async fn planning_does_not_supersede_unrelated_pending_proposals() {
+    let (app, path, session, user) =
+        setup("preserve-pending", "Prepare uma ação e mantenha decisões separadas.").await;
+    let installation = &app.config().installation_id;
+
+    crate::infra::chat_tools::propose_for_plan(
+        app.database().pool(),
+        installation,
+        &session,
+        &user,
+        "create_organization",
+        &json!({
+            "organization_kind": "business",
+            "name": "Proposta independente",
+            "reason": "Aguardar decisão explícita"
+        }),
+    )
+    .await
+    .unwrap();
+
+    let pending_before: String = sqlx::query_scalar(
+        "SELECT lifecycle_status FROM chat_organization_proposals
+         WHERE installation_id=? AND session_id=? AND name=?",
+    )
+    .bind(installation)
+    .bind(&session)
+    .bind("Proposta independente")
+    .fetch_one(app.database().pool())
+    .await
+    .unwrap();
+    assert_eq!(pending_before, "pending");
+
+    let calls = two_step_calls();
+    let prepared = plan::prepare(
+        app.database().pool(),
+        installation,
+        &calls,
+        plan::PlanLimits::default(),
+    )
+    .await
+    .unwrap();
+    let created = store::create_plan(
+        app.database().pool(),
+        installation,
+        &session,
+        &user,
+        &prepared,
+        plan::PlanLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.state, "awaiting_authorization");
+
+    let pending_after: String = sqlx::query_scalar(
+        "SELECT lifecycle_status FROM chat_organization_proposals
+         WHERE installation_id=? AND session_id=? AND name=?",
+    )
+    .bind(installation)
+    .bind(&session)
+    .bind("Proposta independente")
+    .fetch_one(app.database().pool())
+    .await
+    .unwrap();
+    assert_eq!(pending_after, "pending");
+
+    drop(app);
+    let _ = std::fs::remove_file(path);
+}

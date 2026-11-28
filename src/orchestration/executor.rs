@@ -259,8 +259,13 @@ async fn execute_step(
         }));
     };
     if result.get("status").and_then(Value::as_str) == Some("pending") {
+        // Revalidate the authenticated owner immediately before and after the
+        // approval-bound side effect. A session change during proposal
+        // preparation must not authorize execution under the old context.
+        check_session()?;
         let decision =
             chat_tools::decide(pool, installation, owner_id, session, &proposal_id, true).await?;
+        check_session()?;
         if let Some((_, refreshed)) =
             store::proposal_result(pool, installation, session, &response.id).await?
         {

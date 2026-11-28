@@ -424,6 +424,46 @@ pub async fn complete_step(
     Ok(())
 }
 
+/// Persiste uma proposta pendente sem consumar a etapa.
+pub async fn pause_step_for_approval(
+    pool: &SqlitePool,
+    installation: &str,
+    plan_id: &str,
+    step_id: &str,
+    result: &Value,
+    result_message_id: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE chat_tool_plan_steps SET state='authorized', result_json=?,          result_message_id=?, finished_at=NULL, error=NULL          WHERE id=? AND plan_id=? AND installation_id=?",
+    )
+    .bind(result.to_string())
+    .bind(result_message_id)
+    .bind(step_id)
+    .bind(plan_id)
+    .bind(installation)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Devolve o plano ao estado autorizado enquanto aguarda decisão do proprietário.
+pub async fn pause_plan_for_approval(
+    pool: &SqlitePool,
+    installation: &str,
+    session: &str,
+    plan_id: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE chat_tool_plans SET state='authorized', updated_at=datetime('now')          WHERE id=? AND installation_id=? AND session_id=? AND state='running'",
+    )
+    .bind(plan_id)
+    .bind(installation)
+    .bind(session)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Persista resultado e mensagem de uma etapa falha sem alterar seu estado.
 pub async fn record_failed_result(
     pool: &SqlitePool,

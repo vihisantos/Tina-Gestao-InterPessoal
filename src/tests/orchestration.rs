@@ -608,3 +608,40 @@ async fn tool_history_is_compatible_with_nvidia_protocol() {
     drop(app);
     let _ = std::fs::remove_file(path);
 }
+
+#[tokio::test]
+async fn pending_owner_proposal_pauses_plan_without_auto_approval() {
+    let (app, path, session, user) = setup("pending", "Crie uma empresa.").await;
+    let installation = &app.config().installation_id;
+    let calls = vec![two_step_calls()[0].clone()];
+    let (authorized, _prepared) = create_authorized(&app, &session, &user, &calls).await;
+    let (_tx, cancelled) = tokio::sync::watch::channel(false);
+    let summary = executor::execute_authorized(
+        app.database().pool(),
+        installation,
+        &app.config().owner_uuid,
+        &session,
+        &authorized.id,
+        authorized.authorized_fingerprint.as_deref().unwrap(),
+        cancelled,
+        |_, _| async { Ok("não deve chamar".to_owned()) },
+        ok_session(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.plan.state, "authorized");
+    assert_eq!(summary.executed, 0);
+    assert!(summary.final_answer.is_none());
+    let step = store::load_steps(app.database().pool(), installation, &session, &authorized.id)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(step.state, "authorized");
+    let result: Value = serde_json::from_str(step.result_json.as_deref().unwrap()).unwrap();
+    assert_eq!(result["status"], "pending");
+    assert_eq!(result["requires_owner_approval"], true);
+
+    drop(app);
+    let _ = std::fs::remove_file(path);
+}

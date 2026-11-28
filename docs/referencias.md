@@ -34,6 +34,10 @@ O repositório descreve o OpenBot como um workspace desktop *local-first* para c
 
 O README também documenta, entre outros pontos:
 - uma conversa local estável por agente ao alternar entre provedores, mantendo identificadores nativos de sessão do provedor como detalhe interno;
+- separação entre conversa principal do agente e threads/tarefas laterais, que podem manter conversa, sessão do provedor, fila e controles próprios sem criar outra identidade de agente;
+- possibilidade de criar uma thread derivada a partir de uma mensagem/turno anterior, preservando o trecho anterior e a relação de origem;
+- monitoramento de uso de contexto por thread e mecanismos de compactação com estados, limiares, tentativas e tratamento de falhas;
+- fila de mensagens com opções de reordenar, editar, excluir, direcionar/steer quando suportado, interromper para enviar agora ou executar em nova thread;
 - workspaces e dados locais associados aos agentes;
 - compartilhamento/transferência de arquivos e entregas;
 - canais e colaboração entre agentes;
@@ -49,10 +53,12 @@ Esses itens descrevem o produto OpenBot; não são afirmações de que a Tina j�
 2. **Workspace individual:** separar arquivos, estado operacional e ferramentas de cada funcionário.
 3. **Fila de mensagens/tarefas:** evitar concorrência desordenada quando um agente recebe novas instruções durante uma execução.
 4. **Colaboração entre funcionários:** comunicação e transferência de trabalho com remetente, destinatário, escopo e trilha de auditoria.
-5. **Compartilhamento de arquivos:** transferência explícita e autorizada, sem transformar pastas de agentes em um espaço comum irrestrito.
-6. **Navegador isolado:** sessão e permissões de navegação separadas por agente ou workspace.
-7. **Conversa independente do provedor:** histórico de produto da Tina não deve depender do identificador de sessão de um fornecedor de modelo.
-8. **Execução local-first:** preservar controle local dos dados e deixar claro quando uma capacidade exige serviço remoto.
+5. **Threads de tarefa e ramificações:** permitir que um funcionário mantenha seu chat principal e abra frentes paralelas sem duplicar sua identidade; uma ramificação deve registrar a mensagem/turno de origem.
+6. **Fila controlável:** permitir reordenar, editar e cancelar mensagens pendentes; oferecer envio imediato com interrupção apenas quando a política e o provedor permitirem; oferecer execução em thread separada.
+7. **Compartilhamento de arquivos:** transferência explícita e autorizada, sem transformar pastas de agentes em um espaço comum irrestrito.
+8. **Navegador isolado:** sessão e permissões de navegação separadas por agente ou workspace.
+9. **Conversa independente do provedor:** histórico de produto da Tina não deve depender do identificador de sessão de um fornecedor de modelo.
+10. **Execução local-first:** preservar controle local dos dados e deixar claro quando uma capacidade exige serviço remoto.
 
 ### Adaptação proposta para a Tina (ainda não aprovada)
 
@@ -60,6 +66,9 @@ Esses itens descrevem o produto OpenBot; não são afirmações de que a Tina j�
 - Cada funcionário possui sessões próprias, memória própria, workspace e estado de execução próprios.
 - Tina Central mantém um chat próprio e pode acessar funcionários por autoridade de proprietário, inclusive fora da cadeia hierárquica.
 - Filas devem distinguir mensagens conversacionais, ordens de trabalho e eventos de sistema; definir política de interrupção, cancelamento, retomada e idempotência.
+- Uma tarefa paralela deve ser uma thread do mesmo funcionário, não um funcionário duplicado; thread principal, threads laterais e ramificações devem ter ciclo de vida e origem explícitos.
+- O indicador de contexto deve ser baseado em uso reportado pelo provedor quando disponível; estimativas precisam ser identificadas como estimativas. Compactação deve ser observável, recuperável e não pode apagar o histórico bruto.
+- Mensagens enfileiradas precisam ter posição, estado e regras claras quando o agente está ocupado, aguardando autenticação ou executando uma rotina. A Tina deve decidir quais ações podem interromper uma execução em andamento.
 - Delegações continuam vinculadas à hierarquia e à empresa; colaboração não pode furar isolamento entre empresas/instalações.
 - Compartilhamento de arquivos exige concessão explícita, registro de origem e auditoria.
 - Contexto da sessão, memória permanente e histórico bruto devem ser camadas distintas. Resumos/compactações precisam manter referências às mensagens e artefatos de origem.

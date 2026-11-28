@@ -111,13 +111,13 @@
 </script>
 
 {#if proposal}
-  <Card title={proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : 'Posso criar este departamento?'}>
+  <Card title={proposal.tool_name.startsWith('assign_') ? 'Autorizar atribuição de ferramentas?' : proposal.tool_name.startsWith('revoke_') ? 'Autorizar revogação de ferramentas?' : proposal.tool_name === 'create_organization' ? 'Posso criar esta organização?' : proposal.tool_name === 'create_position' ? 'Posso criar este cargo?' : proposal.tool_name === 'generate_contract' ? 'Posso salvar esta minuta de contrato?' : 'Posso criar este departamento?'}>
     {#snippet badge()}<Badge tone="ok">Aguardando decisão</Badge>{/snippet}
     <p><strong>{proposal.name}</strong>{#if proposal.code} ({proposal.code}){/if}</p>
-    <p>{proposal.tool_name === 'create_department' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
+    <p>{proposal.tool_name !== 'create_organization' ? `Organização: ${proposal.company_name} — ` : 'Contexto: '}{proposal.organization_kind === 'personal' ? 'Vida pessoal' : 'Empresarial'}</p>
     {#if proposal.reason}<p><strong>Por que a Tina sugere:</strong> {proposal.reason}</p>{/if}
-    {#if proposal.description}<p>{proposal.description}</p>{/if}
-    <p>A criação será registrada no banco somente após sua autorização. Você também pode cancelar sem criar nada.</p>
+    {#if proposal.description}<p class="description">{proposal.description}</p>{/if}
+    <p>A alteração será registrada no banco somente após sua autorização. Você também pode cancelar sem criar nada.</p>
     <div class="actions">
       <Button onclick={() => decide(true)} disabled={busy}>Confirmar criação</Button>
       <Button variant="secondary" onclick={() => decide(false)} disabled={busy}>Recusar</Button>
@@ -128,6 +128,7 @@
 {#if error}<p role="alert" class="error">{error}</p>{/if}
 
 <style>
+  .description { white-space: pre-wrap; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   .error { color: var(--tina-pink-deep); font-size: .85rem; }
 </style>

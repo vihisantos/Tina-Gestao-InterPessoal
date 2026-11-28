@@ -90,6 +90,9 @@ qualquer agente diretamente.
 restringe os direitos do proprietário nem a comunicação direta; a hierarquia organiza a operação
 padrão, nunca a autoridade do proprietário.
 
+**R-5.8** Recrutamento de agentes: a Tina identifica necessidades operacionais, consulta a estrutura existente e propõe a criação de cargos ou contratação. O processo de RH prepara um contrato operacional com responsabilidades, limites, supervisão, ferramentas e modelo escolhido mediante avaliação verificável. O proprietário autoriza a contratação antes da ativação.
+*Aceite:* a Tina propõe uma contratação sem depender de comando literal, registra a justificativa, compara modelos NVIDIA disponíveis com evidências de competência, latência e custo quando disponível, mostra o contrato e só efetiva após aprovação; sem evidência suficiente, a contratação não é efetivada.
+
 ## R-6. Comando Central e eventos reais
 
 **R-6.1** O produto oferece uma visão consolidada do que está acontecendo agora — o Comando
@@ -116,6 +119,9 @@ parâmetros relevantes e quais saídas produziram, por delegação.
 
 **R-7.3** Histórico e resultados: delegante, delegado e superiores na hierarquia consultam o
 resultado de qualquer delegação que atravessou suas instâncias; o proprietário consulta todas.
+
+**R-7.4** Aplicativos de ferramentas: ferramentas reais são agrupadas em aplicativos; o proprietário e a Tina, dentro da autoridade concedida, podem atribuir ou revogar pacotes ou ferramentas individuais de funcionários. Nenhum cargo concede acesso automaticamente.
+*Aceite:* a aba Tools mostra catálogo, atribuições e revogações; o backend verifica a identidade, o escopo organizacional e o acesso a cada execução. Ferramentas administrativas e operações sensíveis preservam a autorização do proprietário. Pacotes novos não ampliam concessões antigas silenciosamente.
 
 ## R-8. Controle de execução (pausa, interrupção, cancelamento)
 

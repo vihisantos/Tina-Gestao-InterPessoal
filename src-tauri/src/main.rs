@@ -103,6 +103,32 @@ fn chat_set_key(app: State<'_, TinaApp>, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn run_employee(
+    app: State<'_, TinaApp>,
+    employee_id: String,
+    task: String,
+) -> Result<tina::infra::employee_runtime::EmployeeRun, String> {
+    app.owner_run_employee(&employee_id, &task)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn nvidia_models(app: State<'_, TinaApp>) -> Result<Vec<String>, String> {
+    app.owner_nvidia_models().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn nvidia_evaluate_model(
+    app: State<'_, TinaApp>,
+    model: String,
+) -> Result<tina::infra::nvidia_evaluation::ModelEvaluation, String> {
+    app.owner_evaluate_nvidia_model(&model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn chat_has_key(app: State<'_, TinaApp>) -> Result<bool, String> {
     app.owner_has_nvidia_key().map_err(|e| e.to_string())
 }
@@ -330,12 +356,96 @@ async fn chat_decide_department(
 }
 
 #[tauri::command]
+fn list_tool_catalog(
+    app: State<'_, TinaApp>,
+) -> Result<Vec<tina::infra::tool_access::ToolEntry>, String> {
+    app.owner_tool_catalog().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_tool_grants(
+    app: State<'_, TinaApp>,
+) -> Result<Vec<tina::infra::tool_access::ToolGrant>, String> {
+    app.owner_tool_grants().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn change_tool_access(
+    app: State<'_, TinaApp>,
+    employee_id: String,
+    action: String,
+    key: String,
+) -> Result<(), String> {
+    app.owner_change_tool_access(&employee_id, &action, &key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn chat_cancel_proposal(
     app: State<'_, TinaApp>,
     session_id: String,
     proposal_id: String,
 ) -> Result<tina::infra::chat::ChatMessage, String> {
     app.owner_cancel_proposal(&session_id, &proposal_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_pending_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+) -> Result<Option<tina::orchestration::plan::PlanCard>, String> {
+    app.owner_pending_plan(&session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_decide_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    fingerprint: String,
+    approved: bool,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_decide_plan(&session_id, &plan_id, &fingerprint, approved)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_resume_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_resume_plan(&session_id, &plan_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_cancel_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    reason: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_cancel_plan(&session_id, &plan_id, &reason)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_supersede_plan(
+    app: State<'_, TinaApp>,
+    session_id: String,
+    plan_id: String,
+    reason: String,
+) -> Result<tina::PlanDecision, String> {
+    app.owner_supersede_plan(&session_id, &plan_id, &reason)
         .await
         .map_err(|e| e.to_string())
 }
@@ -400,12 +510,23 @@ fn main() {
             chat_generate,
             chat_pending_department,
             chat_decide_department,
+            chat_pending_plan,
+            chat_decide_plan,
+            chat_resume_plan,
+            chat_cancel_plan,
+            chat_supersede_plan,
+            list_tool_catalog,
+            list_tool_grants,
+            change_tool_access,
             chat_cancel_proposal,
             chat_cancel,
             chat_limits,
             chat_open_link,
             chat_set_key,
             chat_has_key,
+            nvidia_models,
+            run_employee,
+            nvidia_evaluate_model,
             chat_delete_key,
             commands::owner_status,
             commands::create_owner_account,

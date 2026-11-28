@@ -556,6 +556,8 @@ async fn cancelled_generation_signal_is_respected_before_transport() {
         role: "user".into(),
         content: "teste".into(),
         created_at: String::new(),
+        tool_call_id: None,
+        tool_calls_json: None,
     }];
     let err = chat::stream_nvidia("dummy-key", "model", &messages, 16, rx, |_| Ok(()))
         .await

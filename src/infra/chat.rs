@@ -1,5 +1,6 @@
 //! Armazenamento do chat principal: acesso somente por TinaApp autenticada.
 use crate::error::{Result, TinaError};
+use crate::orchestration::calls::{ToolCall, ToolCallAccumulator};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -49,6 +50,10 @@ pub struct ChatMessage {
     pub content: String,
     /// Data de criação.
     pub created_at: String,
+    /// Identificador da chamada NVIDIA quando a mensagem representa um resultado de ferramenta.
+    pub tool_call_id: Option<String>,
+    /// Chamadas NVIDIA serializadas quando a mensagem representa um pedido de ferramentas.
+    pub tool_calls_json: Option<String>,
 }
 
 pub(crate) async fn create_session(
@@ -183,7 +188,7 @@ pub(crate) async fn append_message_with_id(
     .execute(&mut *tx)
     .await?;
     let message = sqlx::query_as(
-        "SELECT id, role, content, created_at FROM chat_messages
+        "SELECT id, role, content, created_at, tool_call_id, tool_calls_json FROM chat_messages
          WHERE id = ? AND installation_id = ? AND session_id = ? AND role = ? AND content = ?",
     )
     .bind(id)
@@ -208,8 +213,8 @@ pub(crate) async fn list_messages(
     session: &str,
 ) -> Result<Vec<ChatMessage>> {
     Ok(sqlx::query_as(
-        "SELECT id, role, content, created_at FROM (
-             SELECT m.id, m.role, m.content, m.created_at, m.rowid AS message_order
+        "SELECT id, role, content, created_at, tool_call_id, tool_calls_json FROM (
+             SELECT m.id, m.role, m.content, m.created_at, m.tool_call_id, m.tool_calls_json, m.rowid AS message_order
              FROM chat_messages m
              JOIN chat_sessions s ON s.id = m.session_id AND s.installation_id = m.installation_id
              WHERE s.id = ? AND s.installation_id = ?
@@ -257,6 +262,22 @@ pub fn build_nvidia_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value>
         "content": TINA_SYSTEM_PROMPT,
     }));
     payload.extend(messages.iter().map(|m| {
+        if let Some(call_id) = &m.tool_call_id {
+            return serde_json::json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": m.content
+            });
+        }
+        if let Some(calls) = &m.tool_calls_json {
+            let parsed = serde_json::from_str::<serde_json::Value>(calls)
+                .unwrap_or_else(|_| serde_json::json!([]));
+            return serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": parsed
+            });
+        }
         serde_json::json!({
             "role": m.role,
             "content": m.content
@@ -290,6 +311,8 @@ mod context_tests {
             role: role.into(),
             content: content.into(),
             created_at: String::new(),
+            tool_call_id: None,
+            tool_calls_json: None,
         }
     }
 
@@ -544,67 +567,15 @@ pub(crate) async fn stream_nvidia_from_base(
     .await?
     {
         NvidiaTurn::Text(text) => Ok(text),
-        NvidiaTurn::Tool(_) => Err(TinaError::Other("tool não habilitada".into())),
+        NvidiaTurn::Tools(_) => Err(TinaError::Other("tool não habilitada".into())),
     }
 }
 
 /// Resultado completo de uma rodada de inferência.
 pub(crate) enum NvidiaTurn {
     Text(String),
-    Tool(ToolCall),
-}
-
-#[derive(Default, Debug)]
-pub(crate) struct ToolCall {
-    pub(crate) name: String,
-    pub(crate) arguments: String,
-    id: String,
-}
-
-fn accumulate_tool(value: &serde_json::Value, call: &mut ToolCall) -> Result<()> {
-    let calls = value.pointer("/choices/0/delta/tool_calls");
-    if let Some(calls) = calls {
-        let entries = calls
-            .as_array()
-            .ok_or_else(|| TinaError::ToolError("tool_calls inválido".into()))?;
-        for item in entries {
-            if item.get("index").and_then(|v| v.as_u64()) != Some(0)
-                || item
-                    .get("type")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|t| t != "function")
-            {
-                return Err(TinaError::ToolError(
-                    "apenas uma chamada de função por rodada".into(),
-                ));
-            }
-            if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
-                if !call.id.is_empty() && call.id != id {
-                    return Err(TinaError::ToolError(
-                        "identificador de chamada conflitante".into(),
-                    ));
-                }
-                if id.len() > 256 {
-                    return Err(TinaError::ToolError(
-                        "identificador de chamada extenso".into(),
-                    ));
-                }
-                call.id = id.to_owned();
-            }
-            for (pointer, target, limit) in [
-                ("/function/name", &mut call.name, 100usize),
-                ("/function/arguments", &mut call.arguments, 16_384usize),
-            ] {
-                if let Some(fragment) = item.pointer(pointer).and_then(|v| v.as_str()) {
-                    if target.len().saturating_add(fragment.len()) > limit {
-                        return Err(TinaError::ToolError("chamada excede limite".into()));
-                    }
-                    target.push_str(fragment);
-                }
-            }
-        }
-    }
-    Ok(())
+    /// Uma ou mais chamadas autorizadas pelo modelo, em ordem de índice.
+    Tools(Vec<ToolCall>),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -661,7 +632,7 @@ pub(crate) async fn stream_nvidia_turn(
         let mut answer = String::new();
         let mut stopped = false;
         let mut tool_finished = false;
-        let mut call = ToolCall::default();
+        let mut calls = ToolCallAccumulator::default();
         while let Some(chunk) = response
             .chunk()
             .await
@@ -674,7 +645,7 @@ pub(crate) async fn stream_nvidia_turn(
                     if value.get("error").is_some() {
                         return Err(TinaError::Other("NVIDIA retornou erro de geração".into()));
                     }
-                    accumulate_tool(&value, &mut call)?;
+                    calls.push(&value)?;
                     if value
                         .pointer("/choices/0/finish_reason")
                         .and_then(|v| v.as_str())
@@ -698,12 +669,12 @@ pub(crate) async fn stream_nvidia_turn(
         }
         decoder.finish()?;
         if tool_finished {
-            if stopped || call.id.is_empty() || call.name.is_empty() || call.arguments.is_empty() {
-                return Err(TinaError::ToolError("chamada incompleta ou ambígua".into()));
+            if stopped {
+                return Err(TinaError::ToolError("conclusão conflitante".into()));
             }
-            return Ok(NvidiaTurn::Tool(call));
+            return Ok(NvidiaTurn::Tools(calls.finish()?));
         }
-        if !call.name.is_empty() || !call.arguments.is_empty() || !call.id.is_empty() {
+        if !calls.is_empty() {
             return Err(TinaError::ToolError("chamada sem conclusão".into()));
         }
         if !stopped {
@@ -838,22 +809,28 @@ mod tool_call_tests {
 
     #[test]
     fn assembles_fragmented_function_arguments() {
-        let mut call = ToolCall::default();
+        let mut calls = ToolCallAccumulator::default();
         for value in [
             serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"create_department","arguments":"{\"name\":"}}]}}]}),
             serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Finanças\"}"}}]}}]}),
         ] {
-            accumulate_tool(&value, &mut call).unwrap();
+            calls.push(&value).unwrap();
         }
-        assert_eq!(call.name, "create_department");
+        let calls = calls.finish().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "create_department");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap()["name"],
+            serde_json::from_str::<serde_json::Value>(&calls[0].arguments).unwrap()["name"],
             "Finanças"
         );
-        assert!(accumulate_tool(
-            &serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":1}]}}]}),
-            &mut call
-        )
-        .is_err());
+    }
+
+    #[test]
+    fn accepts_second_indexed_call_in_stream() {
+        let mut calls = ToolCallAccumulator::default();
+        assert!(calls
+            .push(&serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call-2","type":"function","function":{"name":"create_organization","arguments":"{}"}}]}}]}))
+            .is_ok());
+        assert_eq!(calls.finish().unwrap()[0].index, 1);
     }
 }

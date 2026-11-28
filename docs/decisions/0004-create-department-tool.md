@@ -33,7 +33,7 @@ A resolução da organização usa `kind`, nunca o nome: um cadastro comercial c
 
 `lifecycle_status` é a fonte autoritativa (`pending`, `approved`, `rejected`, `superseded`, `cancelled`); `status` permanece legado para leitores antigos. Mensagens posteriores não escondem a proposta pendente. Uma nova proposta substitui a anterior na mesma sessão e instalação, marcando-a como `superseded` com `superseded_by`; aprovação ou recusa da proposta substituída falha. Decisão repetida com o mesmo resultado devolve a mesma mensagem persistida; decisão oposta, cancelamento de proposta decidida e aprovação de proposta cancelada falham sem gravar. Cancelamento repetido é idempotente e gera auditoria uma única vez.
 
-O cartão do chat mostra a justificativa e oferece Confirmar, Recusar e Cancelar. Ele recarrega quando a conversa avança, sem apagar a proposta, e descarta respostas antigas quando a sessão muda.
+O cartão do chat mostra a justificativa e oferece Confirmar criação, Recusar e Cancelar proposta. Ele recarrega quando a conversa avança, sem apagar a proposta, e descarta respostas antigas quando a sessão muda.
 
 ## Migrations desta branch
 
@@ -42,9 +42,18 @@ O cartão do chat mostra a justificativa e oferece Confirmar, Recusar e Cancelar
 | 13 | `013_company_kind.sql` | tipo explícito `personal`/`business`, no máximo uma organização pessoal por instalação. |
 | 14 | `014_chat_department_proposals.sql` | propostas de departamento persistidas por sessão. |
 | 15 | `015_proactive_organization_proposals.sql` | propostas de organização por iniciativa da Tina. |
+| 16 | `016_chat_position_proposals.sql` | propostas de cargo, sem contratação automática. |
+| 17 | `017_tool_app_grants.sql` | propostas de atribuição e revogação de ferramentas. |
+| 18 | `018_chat_contract_drafts.sql` | minutas operacionais aguardando autorização. |
 | 19 | `019_proposal_lifecycle.sql` | estados explícitos, substituição segura, cancelamento e índices de uma proposta ativa por sessão. |
+| 20 | `020_proposal_lifecycle_rh.sql` | ciclo de vida unificado das cinco famílias de propostas após a integração das PRs #73 e #74. |
 
-As versões 16 a 18 ficam reservadas para a PR empilhada de RH e não são desta branch. As migrations publicadas não foram editadas; toda mudança de schema é aditiva e forward-only. O upgrade de bancos legados é validado a partir das próprias SQLs incorporadas, preservando dados e falhando em divergência real, versão futura ou migration marcada como falha. Nunca há reparo automático na inicialização.
+As versões 16 a 18 vieram da PR #74 e a 20 foi adicionada na integração, sem
+rebase nem force push. As migrations publicadas não foram editadas; toda mudança
+de schema é aditiva e forward-only. O upgrade de bancos legados é validado a
+partir das próprias SQLs incorporadas, preservando dados e falhando em
+divergência real, versão futura ou migration marcada como falha. Nunca há reparo
+automático na inicialização.
 
 ## Validação e pendências
 

@@ -3,6 +3,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import EmployeeSpace from './EmployeeSpace.svelte';
   import EmployeeProfile from './EmployeeProfile.svelte';
+  import EmployeeRun from './EmployeeRun.svelte';
   import type { EmployeeDirectoryEntry } from '../personnel';
 
   let employees = $state<EmployeeDirectoryEntry[]>([]);
@@ -42,6 +43,7 @@
   <EmployeeProfile name={selected.name} position={selected.position} department={selected.department}
     company={selected.company} active={selected.active} supervisor={selected.supervisor ?? undefined}
     responsibilities={selected.responsibilities ?? undefined} />
+  {#if selected.active}{#key selected.id}<EmployeeRun employeeId={selected.id} />{/key}{/if}
 {:else}
   <EmployeeSpace {employees} {loading} {error} onopen={id => (selectedId = id)} />
 {/if}

@@ -371,20 +371,28 @@ impl<'a> PositionRepository<'a> {
         let mut tx = begin_owner_write(self.pool, installation_id, owner_id).await?;
         let id = Uuid::new_v4().to_string();
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO positions (id, department_id, name, level, authority_level, description, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+            SELECT ?, d.id, ?, ?, ?, ?, 'active', datetime('now')
+            FROM departments d JOIN companies c ON c.id = d.company_id
+            WHERE d.id = ? AND c.installation_id = ? AND d.status = 'active' AND c.status = 'active'
             "#,
         )
         .bind(&id)
-        .bind(department_id)
         .bind(name)
         .bind(level)
         .bind(authority_level)
         .bind(description)
+        .bind(department_id)
+        .bind(installation_id)
         .execute(&mut *tx)
         .await?;
+        if result.rows_affected() != 1 {
+            return Err(TinaError::Unauthorized(
+                "departamento indisponível ou fora da instalação".into(),
+            ));
+        }
 
         let row: PositionRow = sqlx::query_as(
             "SELECT id, department_id, name, level, authority_level, description, status, created_at FROM positions WHERE id = ?",

@@ -8,7 +8,10 @@
 
 #![deny(missing_docs)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex as StdMutex};
+
+use tokio::sync::watch;
 
 use crate::config::AppConfig;
 use crate::core::authorization::{
@@ -16,12 +19,15 @@ use crate::core::authorization::{
 };
 use crate::core::owner_auth::{OwnerAccess, OwnerAccountStatus};
 use crate::error::Result;
+use crate::orchestration::plan::PlanCard;
 
 pub mod config;
 pub mod core;
 pub mod error;
 
 pub mod infra;
+/// Motor central de planejamento, autorização e execução de ferramentas.
+pub mod orchestration;
 
 #[cfg(test)]
 mod tests;
@@ -32,6 +38,26 @@ pub use infra::Database;
 /// VersÃƒÂ£o da plataforma, obtida do manifesto Cargo.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Resultado serializado de uma decisão sobre plano de ferramentas.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanDecision {
+    /// Identificador imutável do plano decidido.
+    pub plan_id: String,
+    /// Estado persistido após a decisão ou execução.
+    pub state: String,
+    /// Cartão ainda ativo, quando houver.
+    pub card: Option<PlanCard>,
+    /// Etapas concluídas nesta chamada.
+    pub executed: usize,
+    /// Identificadores das etapas que falharam.
+    pub failed: Vec<String>,
+    /// Identificadores das etapas bloqueadas por dependência.
+    pub skipped: Vec<String>,
+    /// Mensagem assimilada ao histórico visível do chat.
+    pub message: infra::chat::ChatMessage,
+}
+
 /// Estado inicial da Tina, compartilhado com os comandos Tauri via `State`.
 #[derive(Debug)]
 pub struct TinaApp {
@@ -39,8 +65,10 @@ pub struct TinaApp {
     database: Database,
     owner_access: Arc<OwnerAccess>,
     chat_generation: Arc<tokio::sync::Mutex<()>>,
+    /// Sinais de cancelamento por plano, compartilhados com os comandos Tauri.
+    plan_cancellation: Arc<StdMutex<HashMap<String, watch::Sender<bool>>>>,
     #[cfg(test)]
-    test_nvidia_key: std::sync::Mutex<Option<String>>,
+    test_nvidia_key: StdMutex<Option<String>>,
 }
 
 /// Acesso temporÃƒÂ¡rio aos repositÃƒÂ³rios da instalaÃƒÂ§ÃƒÂ£o, entregue somente apÃƒÂ³s
@@ -111,8 +139,9 @@ impl TinaApp {
             database,
             owner_access: Arc::new(OwnerAccess::default()),
             chat_generation: Arc::new(tokio::sync::Mutex::new(())),
+            plan_cancellation: Arc::new(StdMutex::new(HashMap::new())),
             #[cfg(test)]
-            test_nvidia_key: std::sync::Mutex::new(None),
+            test_nvidia_key: StdMutex::new(None),
         })
     }
 
@@ -165,8 +194,9 @@ impl TinaApp {
             database,
             owner_access: Arc::new(OwnerAccess::default()),
             chat_generation: Arc::new(tokio::sync::Mutex::new(())),
+            plan_cancellation: Arc::new(StdMutex::new(HashMap::new())),
             #[cfg(test)]
-            test_nvidia_key: std::sync::Mutex::new(None),
+            test_nvidia_key: StdMutex::new(None),
         })
     }
 
@@ -232,7 +262,16 @@ impl TinaApp {
         )
     }
 
-    /// ConfiguraÃƒÂ§ÃƒÂ£o carregada da instalaÃƒÂ§ÃƒÂ£o.
+    /// Obtém (ou cria) o sinal de cancelamento persistente de um plano.
+    fn plan_cancel_signal(&self, plan_id: &str) -> watch::Sender<bool> {
+        let mut signals = self.plan_cancellation.lock().unwrap();
+        signals
+            .entry(plan_id.to_owned())
+            .or_insert_with(|| watch::channel(false).0)
+            .clone()
+    }
+
+    /// Configuração carregada da instalação.
     pub fn config(&self) -> &AppConfig {
         &self.config
     }
@@ -255,6 +294,40 @@ impl TinaApp {
             .await?;
         self.require_owner(Operation::Read)?;
         Ok(entries)
+    }
+
+    /// Lista aplicativos e ferramentas registradas, sem anunciar implementações futuras.
+    pub fn owner_tool_catalog(&self) -> Result<Vec<infra::tool_access::ToolEntry>> {
+        self.require_owner(Operation::Read)?;
+        Ok(infra::tool_access::catalog())
+    }
+
+    /// Consulta as atribuições de ferramentas desta instalação.
+    pub async fn owner_tool_grants(&self) -> Result<Vec<infra::tool_access::ToolGrant>> {
+        self.require_owner(Operation::Read)?;
+        let rows =
+            infra::tool_access::list(self.database.pool(), &self.config.installation_id).await?;
+        self.require_owner(Operation::Read)?;
+        Ok(rows)
+    }
+
+    /// Concede ou revoga uma ferramenta ou um aplicativo a um funcionário autenticado na instalação.
+    pub async fn owner_change_tool_access(
+        &self,
+        employee_id: &str,
+        action: &str,
+        key: &str,
+    ) -> Result<()> {
+        self.require_owner(Operation::ManagePermissions)?;
+        infra::tool_access::change(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            employee_id,
+            action,
+            key,
+        )
+        .await
     }
 
     /// Armazena a chave NVIDIA no cofre nativo apÃƒÂ³s autorizaÃƒÂ§ÃƒÂ£o.
@@ -568,17 +641,66 @@ impl TinaApp {
                     )
                     .await
                 }
-                infra::chat::NvidiaTurn::Tool(call) => {
+                infra::chat::NvidiaTurn::Tools(calls) => {
+                    let active = orchestration::store::load_active_plan(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        session_id,
+                    )
+                    .await?;
+                    if active.is_some() {
+                        return Err(TinaError::ToolError(
+                            "já existe um plano ativo; aprove, recuse, cancele ou substitua o plano atual antes de continuar".into(),
+                        ));
+                    }
                     let user = context
                         .last()
                         .ok_or_else(|| TinaError::ToolError("mensagem ausente".into()))?;
-                    infra::chat_tools::propose(
+                    if calls.len() == 1 {
+                        let call = &calls[0];
+                        return infra::chat_tools::propose(
+                            self.database.pool(),
+                            &self.config.installation_id,
+                            session_id,
+                            &user.id,
+                            &call.name,
+                            &call.arguments,
+                        )
+                        .await;
+                    }
+                    let prepared = orchestration::plan::prepare(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        &calls,
+                        orchestration::plan::PlanLimits::default(),
+                    )
+                    .await?;
+                    let plan = orchestration::store::create_plan(
                         self.database.pool(),
                         &self.config.installation_id,
                         session_id,
                         &user.id,
-                        &call.name,
-                        &call.arguments,
+                        &prepared,
+                        orchestration::plan::PlanLimits::default(),
+                    )
+                    .await?;
+                    orchestration::history::append_tool_call_message(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        session_id,
+                        &calls,
+                    )
+                    .await?;
+                    let summary = format!(
+                        "Organizei {} ações dependentes em um plano. Revise as etapas, justificativas e efeitos antes de autorizar.",
+                        plan.steps_count
+                    );
+                    infra::chat::append_message(
+                        self.database.pool(),
+                        &self.config.installation_id,
+                        session_id,
+                        "assistant",
+                        &summary,
                     )
                     .await
                 }
@@ -646,7 +768,413 @@ impl TinaApp {
         .await
     }
 
-    /// Define chave NVIDIA em mem?ria para testes isolados.
+    /// Consulta o cartão do plano ativo da sessão, com ações e dependências.
+    pub async fn owner_pending_plan(&self, session_id: &str) -> Result<Option<PlanCard>> {
+        self.require_owner(Operation::Read)?;
+        orchestration::store::load_card(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+        )
+        .await
+    }
+
+    /// Aprova ou recusa a versão imutável de um plano de ferramentas.
+    pub async fn owner_decide_plan(
+        &self,
+        session_id: &str,
+        plan_id: &str,
+        fingerprint: &str,
+        approved: bool,
+    ) -> Result<PlanDecision> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("há uma geração ativa".into()))?;
+        self.require_owner(Operation::Write)?;
+        let marker = self
+            .owner_access
+            .session_marker()?
+            .ok_or_else(|| TinaError::Unauthorized("sessão bloqueada".into()))?;
+
+        let plan = orchestration::store::authorize_plan(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            plan_id,
+            fingerprint,
+            approved,
+        )
+        .await?;
+        self.assert_plan_session(marker)?;
+
+        if !approved {
+            let message = infra::chat::append_message(
+                self.database.pool(),
+                &self.config.installation_id,
+                session_id,
+                "assistant",
+                "Plano recusado. Nenhuma ação foi executada e nenhum efeito foi gravado.",
+            )
+            .await?;
+            return Ok(PlanDecision {
+                plan_id: plan.id,
+                state: plan.state,
+                card: None,
+                executed: 0,
+                failed: Vec::new(),
+                skipped: Vec::new(),
+                message,
+            });
+        }
+
+        let authorized = plan
+            .authorized_fingerprint
+            .as_deref()
+            .unwrap_or(&plan.fingerprint)
+            .to_owned();
+        let cancelled = self.plan_cancel_signal(plan_id).subscribe();
+        let summary = self
+            .execute_plan(session_id, plan_id, &authorized, marker, cancelled)
+            .await?;
+        let message = self.append_plan_status(session_id, &summary).await?;
+        Ok(PlanDecision {
+            plan_id: summary.plan.id,
+            state: summary.plan.state,
+            card: None,
+            executed: summary.executed,
+            failed: summary.failed,
+            skipped: summary.skipped,
+            message,
+        })
+    }
+
+    /// Retoma uma aprovação interrompida sem pedir nova autorização.
+    pub async fn owner_resume_plan(&self, session_id: &str, plan_id: &str) -> Result<PlanDecision> {
+        self.require_owner(Operation::Write)?;
+        let _guard = self
+            .chat_generation
+            .try_lock()
+            .map_err(|_| TinaError::Other("há uma geração ativa".into()))?;
+        self.require_owner(Operation::Write)?;
+        let plan = orchestration::store::load_plan(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            plan_id,
+        )
+        .await?
+        .ok_or_else(|| TinaError::Unauthorized("plano inexistente".into()))?;
+        if !matches!(plan.state.as_str(), "authorized" | "running") {
+            return Err(TinaError::ToolError(format!(
+                "plano não pode ser retomado no estado {}",
+                plan.state
+            )));
+        }
+        let marker = self
+            .owner_access
+            .session_marker()?
+            .ok_or_else(|| TinaError::Unauthorized("sessão bloqueada".into()))?;
+        let authorized = plan
+            .authorized_fingerprint
+            .as_deref()
+            .unwrap_or(&plan.fingerprint)
+            .to_owned();
+        let cancelled = self.plan_cancel_signal(plan_id).subscribe();
+        let summary = self
+            .execute_plan(session_id, plan_id, &authorized, marker, cancelled)
+            .await?;
+        let message = self.append_plan_status(session_id, &summary).await?;
+        Ok(PlanDecision {
+            plan_id: summary.plan.id,
+            state: summary.plan.state,
+            card: None,
+            executed: summary.executed,
+            failed: summary.failed,
+            skipped: summary.skipped,
+            message,
+        })
+    }
+
+    /// Cancela um plano ativo, preservando etapas já concluídas.
+    pub async fn owner_cancel_plan(
+        &self,
+        session_id: &str,
+        plan_id: &str,
+        reason: &str,
+    ) -> Result<PlanDecision> {
+        self.require_owner(Operation::Write)?;
+        let existing = orchestration::store::load_plan(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            plan_id,
+        )
+        .await?
+        .ok_or_else(|| TinaError::Unauthorized("plano inexistente".into()))?;
+        if existing.state == "cancelled" {
+            return Ok(PlanDecision {
+                plan_id: existing.id,
+                state: existing.state,
+                card: None,
+                executed: 0,
+                failed: Vec::new(),
+                skipped: Vec::new(),
+                message: self.last_message_or_synthetic(session_id).await?,
+            });
+        }
+        let _ = self.plan_cancel_signal(plan_id).send(true);
+        let plan = orchestration::store::cancel_plan(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            plan_id,
+            reason,
+        )
+        .await?;
+        let message = infra::chat::append_message(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            "assistant",
+            "Plano cancelado. Etapas concluídas foram preservadas; nenhuma foi desfeita.",
+        )
+        .await?;
+        Ok(PlanDecision {
+            plan_id: plan.id,
+            state: plan.state,
+            card: None,
+            executed: 0,
+            failed: Vec::new(),
+            skipped: Vec::new(),
+            message,
+        })
+    }
+
+    /// Substitui explicitamente um plano ativo, registrando quem decidiu e por quê.
+    pub async fn owner_supersede_plan(
+        &self,
+        session_id: &str,
+        plan_id: &str,
+        reason: &str,
+    ) -> Result<PlanDecision> {
+        self.require_owner(Operation::Write)?;
+        let _ = self.plan_cancel_signal(plan_id).send(true);
+        let plan = orchestration::store::supersede_plan(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            plan_id,
+            reason,
+        )
+        .await?;
+        let message = infra::chat::append_message(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            "assistant",
+            "Plano substituído explicitamente. O novo plano exigirá autorização própria.",
+        )
+        .await?;
+        Ok(PlanDecision {
+            plan_id: plan.id,
+            state: plan.state,
+            card: None,
+            executed: 0,
+            failed: Vec::new(),
+            skipped: Vec::new(),
+            message,
+        })
+    }
+
+    /// Executa as etapas autorizadas de um plano com retomada textual sem ferramentas.
+    async fn execute_plan(
+        &self,
+        session_id: &str,
+        plan_id: &str,
+        fingerprint: &str,
+        marker: std::time::Instant,
+        cancelled: watch::Receiver<bool>,
+    ) -> Result<orchestration::executor::ExecutionSummary> {
+        let app = self;
+        let resume_cancel = cancelled.clone();
+        orchestration::executor::execute_authorized(
+            self.database.pool(),
+            &self.config.installation_id,
+            &self.config.owner_uuid,
+            session_id,
+            plan_id,
+            fingerprint,
+            cancelled,
+            move |history, budget| {
+                let signal = resume_cancel.clone();
+                async move { app.resume_plan_text(history, budget, signal).await }
+            },
+            move || app.assert_plan_session(marker),
+        )
+        .await
+    }
+
+    /// Continuação da conversa após as chamadas: inferência textual, sem novas ferramentas.
+    async fn resume_plan_text(
+        &self,
+        history: Vec<infra::chat::ChatMessage>,
+        budget: i64,
+        cancelled: watch::Receiver<bool>,
+    ) -> Result<String> {
+        self.require_owner(Operation::Write)?;
+        let marker = self
+            .owner_access
+            .session_marker()?
+            .ok_or_else(|| TinaError::Unauthorized("sessão bloqueada".into()))?;
+        let check_session = || {
+            if self.owner_access.session_marker()? != Some(marker) {
+                return Err(TinaError::Unauthorized(
+                    "sessão alterada ou expirada".into(),
+                ));
+            }
+            Ok(())
+        };
+        let settings = &self.config.nvidia;
+        infra::chat::nvidia_endpoint(&settings.base_url)?;
+        if settings.max_tokens == 0 || settings.max_tokens > 4096 {
+            return Err(TinaError::Other(
+                "limite de saída ainda não validado para o modelo".into(),
+            ));
+        }
+        let key = {
+            #[cfg(test)]
+            {
+                if let Some(k) = self.test_nvidia_key.lock().unwrap().clone() {
+                    k
+                } else {
+                    let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
+                        .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
+                    entry
+                        .get_password()
+                        .map_err(|_| TinaError::Other("configure a chave NVIDIA".into()))?
+                }
+            }
+            #[cfg(not(test))]
+            {
+                let entry = keyring::Entry::new("Tina.NVIDIA", &self.config.installation_id)
+                    .map_err(|_| TinaError::Other("cofre NVIDIA indisponível".into()))?;
+                entry
+                    .get_password()
+                    .map_err(|_| TinaError::Other("configure a chave NVIDIA".into()))?
+            }
+        };
+        let context_budget = infra::chat::CHAT_CONTEXT_BYTES
+            .saturating_sub(infra::chat::SYSTEM_PROMPT_RESERVE_BYTES);
+        let context = infra::chat::context_window(&history, context_budget);
+        let max_tokens = settings.max_tokens.min(budget.clamp(1, 4096) as u32);
+        let turn = tokio::select! {
+            result = infra::chat::stream_nvidia_turn(
+                &settings.base_url,
+                &key,
+                &settings.default_model,
+                context,
+                max_tokens,
+                std::time::Duration::from_secs(180),
+                cancelled.clone(),
+                false,
+                |_delta| {
+                    check_session()?;
+                    Ok(())
+                },
+            ) => result?,
+            result = async {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    check_session()?;
+                    if *cancelled.borrow() {
+                        break Err::<infra::chat::NvidiaTurn, _>(TinaError::Other(
+                            "geração cancelada".into()
+                        ));
+                    }
+                }
+            } => result?,
+        };
+        check_session()?;
+        match turn {
+            infra::chat::NvidiaTurn::Text(text) => Ok(text),
+            infra::chat::NvidiaTurn::Tools(_) => Err(TinaError::ToolError(
+                "a retomada não pode ampliar o plano autorizado".into(),
+            )),
+        }
+    }
+
+    /// Revalida o marcador de sessão capturado antes da autorização.
+    fn assert_plan_session(&self, marker: std::time::Instant) -> Result<()> {
+        if self.owner_access.session_marker()? != Some(marker) {
+            return Err(TinaError::Unauthorized(
+                "sessão alterada ou expirada".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Grava um resumo legível do resultado sem prometer rollback de efeitos.
+    async fn append_plan_status(
+        &self,
+        session_id: &str,
+        summary: &orchestration::executor::ExecutionSummary,
+    ) -> Result<infra::chat::ChatMessage> {
+        let text = match summary.plan.state.as_str() {
+            "cancelled" => format!(
+                "Plano cancelado durante a execução. {} etapa(s) concluídas foram preservadas.",
+                summary.executed
+            ),
+            "failed" => format!(
+                "Plano interrompido: {} etapa(s) concluídas, {} falharam, {} foram bloqueadas. Nenhum efeito já gravado foi desfeito.",
+                summary.executed,
+                summary.failed.len(),
+                summary.skipped.len()
+            ),
+            _ => format!(
+                "Plano concluído: {} etapa(s) executadas com sucesso.",
+                summary.executed
+            ),
+        };
+        infra::chat::append_message(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+            "assistant",
+            &text,
+        )
+        .await
+    }
+
+    /// Devolve a última mensagem persistida sem gravar uma nova na decisão idempotente.
+    async fn last_message_or_synthetic(
+        &self,
+        session_id: &str,
+    ) -> Result<infra::chat::ChatMessage> {
+        let messages = infra::chat::list_messages(
+            self.database.pool(),
+            &self.config.installation_id,
+            session_id,
+        )
+        .await?;
+        Ok(messages
+            .last()
+            .cloned()
+            .unwrap_or(infra::chat::ChatMessage {
+                id: String::new(),
+                role: "assistant".into(),
+                content: "Plano já estava cancelado.".into(),
+                created_at: String::new(),
+                tool_call_id: None,
+                tool_calls_json: None,
+            }))
+    }
+
+    /// Define chave NVIDIA em memória para testes isolados.
     #[cfg(test)]
     pub fn set_test_nvidia_key_for_test(&self, key: &str) {
         *self.test_nvidia_key.lock().unwrap() = Some(key.to_string());

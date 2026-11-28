@@ -329,6 +329,123 @@ async fn upgrade_from_v15_keeps_only_the_latest_pending_proposal_active() {
 }
 
 #[tokio::test]
+async fn upgrade_from_v19_unifies_rh_proposal_lifecycle_after_019() {
+    let dir = tmp("v19-rh-lifecycle");
+    let path = dir.join("tina.db");
+    seed_legacy_db(&path, 19).await;
+    assert_eq!(versions(&path).await, (1..=19).collect::<Vec<_>>());
+    {
+        let pool = raw_pool(&path).await;
+        sqlx::query("INSERT INTO installations(id,name,root_path,version,owner_uuid) VALUES ('inst-legacy','Legacy','/tmp/legacy','0.1.0','owner-legacy')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO companies(id,installation_id,name,kind,status) VALUES ('comp-legacy','inst-legacy','Empresa Legacy','business','active')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO departments(id,company_id,name,code,status) VALUES ('dept-legacy','comp-legacy','Finanças','FIN','active')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO positions(id,department_id,name,level,authority_level,description,status) VALUES ('pos-legacy','dept-legacy','Analista',1,0,'Acompanhar orçamento','active')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO employees(id,position_id,name,model_config,is_active) VALUES ('emp-legacy','pos-legacy','Ana','{}',1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_sessions(id,installation_id,title,created_at,updated_at) VALUES ('session-legacy','inst-legacy','Legado','2026-01-01 00:00:00','2026-01-01 00:00:00')")
+            .execute(&pool).await.unwrap();
+        for (id, role, content) in [
+            ("msg-user-1", "user", "Alterar ferramentas"),
+            ("msg-prop-1", "assistant", "Proposta de acesso"),
+            ("msg-user-2", "user", "Criar Analista II"),
+            ("msg-prop-2", "assistant", "Proposta de cargo"),
+        ] {
+            sqlx::query("INSERT INTO chat_messages(id,session_id,installation_id,role,content,created_at) VALUES (?, 'session-legacy', 'inst-legacy', ?, ?, '2026-01-01 00:00:00')")
+                .bind(id).bind(role).bind(content).execute(&pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO chat_tool_access_proposals(id,installation_id,session_id,user_message_id,proposal_message_id,employee_id,employee_name,company_id,company_name,organization_kind,department_id,department_name,action,tool_keys,reason,status) VALUES ('access-old','inst-legacy','session-legacy','msg-user-1','msg-prop-1','emp-legacy','Ana','comp-legacy','Empresa Legacy','business','dept-legacy','Finanças','assign_tool','[\"create_position\"]','Rotina','pending')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_position_proposals(id,installation_id,session_id,user_message_id,proposal_message_id,company_id,company_name,organization_kind,department_id,department_name,name,level,description,reason,status) VALUES ('position-new','inst-legacy','session-legacy','msg-user-2','msg-prop-2','comp-legacy','Empresa Legacy','business','dept-legacy','Finanças','Analista II',1,'Apoiar rotina','Nova demanda','pending')")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+    }
+
+    let db = Database::open(&path).await.unwrap();
+    assert_eq!(versions(&path).await, expected_versions());
+    let (state, by, legacy): (String, Option<String>, String) = sqlx::query_as(
+        "SELECT lifecycle_status,superseded_by,status FROM chat_tool_access_proposals WHERE id='access-old'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(state, "pending");
+    assert_eq!(by, None);
+    assert_eq!(legacy, "pending");
+    let active = crate::infra::chat_tools::pending(db.pool(), "inst-legacy", "session-legacy")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.id, "position-new");
+    assert_eq!(active.tool_name, "create_position");
+    let access_state: String = sqlx::query_scalar(
+        "SELECT lifecycle_status FROM chat_tool_access_proposals WHERE id='access-old'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(access_state, "pending");
+    let columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_contract_drafts') WHERE name='lifecycle_status'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(columns, 1);
+    drop(db);
+    integrity_ok(&path).await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn upgrade_from_v20_creates_tool_orchestration_schema_preserving_chats() {
+    let dir = tmp("v20-tool-orchestration");
+    let path = dir.join("tina.db");
+    seed_legacy_db(&path, 20).await;
+    assert_eq!(versions(&path).await, (1..=20).collect::<Vec<_>>());
+    {
+        let pool = raw_pool(&path).await;
+        sqlx::query("INSERT INTO installations(id,name,root_path,version,owner_uuid) VALUES ('inst-legacy','Legacy','/tmp/legacy','0.1.0','owner-legacy')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_sessions(id,installation_id,title,created_at,updated_at) VALUES ('session-legacy','inst-legacy','Legado','2026-01-01 00:00:00','2026-01-01 00:00:00')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO chat_messages(id,session_id,installation_id,role,content,created_at) VALUES ('msg-legacy','session-legacy','inst-legacy','user','Conversa antiga','2026-01-01 00:00:00')")
+            .execute(&pool).await.unwrap();
+        pool.close().await;
+    }
+
+    let db = Database::open(&path).await.unwrap();
+    assert_eq!(versions(&path).await, expected_versions());
+    let plans: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chat_tool_plans'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(plans, 1);
+    let message_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('chat_messages') \
+         WHERE name IN ('tool_call_id','tool_calls_json')",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(message_columns, 2);
+    let content: String =
+        sqlx::query_scalar("SELECT content FROM chat_messages WHERE id='msg-legacy'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(content, "Conversa antiga");
+    drop(db);
+    integrity_ok(&path).await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn startup_refuses_checksum_drift_and_explicit_repair_creates_backup() {
     let dir = tmp("eol");
     let path = dir.join("tina.db");

@@ -9,11 +9,19 @@ mod company;
 mod db;
 mod department;
 mod employee;
+/// Execução experimental isolada de funcionários.
+pub mod employee_runtime;
 mod hierarchy;
+mod hr_contracts;
+mod hr_tools;
 mod installation;
+/// Catálogo e testes sintéticos NVIDIA.
+pub mod nvidia_evaluation;
 mod position;
 mod redis;
 mod telemetry;
+/// Catálogo de aplicativos e controle de ferramentas por funcionário.
+pub mod tool_access;
 
 pub(crate) use audit::begin_owner_write;
 pub(crate) use audit::commit_owner_write;

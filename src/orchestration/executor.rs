@@ -119,8 +119,7 @@ where
                         &message.id,
                     )
                     .await?;
-                    store::pause_plan_for_approval(pool, installation, session, plan_id)
-                        .await?;
+                    store::pause_plan_for_approval(pool, installation, session, plan_id).await?;
                     let paused_plan = store::load_plan(pool, installation, session, plan_id)
                         .await?
                         .ok_or_else(|| TinaError::Other("plano não encontrado ao pausar".into()))?;

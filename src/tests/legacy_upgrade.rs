@@ -372,15 +372,22 @@ async fn upgrade_from_v19_unifies_rh_proposal_lifecycle_after_019() {
     .fetch_one(db.pool())
     .await
     .unwrap();
-    assert_eq!(state, "superseded");
-    assert_eq!(by.as_deref(), Some("position-new"));
-    assert_eq!(legacy, "rejected");
+    assert_eq!(state, "pending");
+    assert_eq!(by, None);
+    assert_eq!(legacy, "pending");
     let active = crate::infra::chat_tools::pending(db.pool(), "inst-legacy", "session-legacy")
         .await
         .unwrap()
         .unwrap();
     assert_eq!(active.id, "position-new");
     assert_eq!(active.tool_name, "create_position");
+    let access_state: String = sqlx::query_scalar(
+        "SELECT lifecycle_status FROM chat_tool_access_proposals WHERE id='access-old'",
+    )
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(access_state, "pending");
     let columns: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pragma_table_info('chat_contract_drafts') WHERE name='lifecycle_status'",
     )

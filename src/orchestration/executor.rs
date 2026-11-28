@@ -259,19 +259,12 @@ async fn execute_step(
         }));
     };
     if result.get("status").and_then(Value::as_str) == Some("pending") {
-        // Revalidate the authenticated owner immediately before and after the
-        // approval-bound side effect. A session change during proposal
-        // preparation must not authorize execution under the old context.
+        // A plan step may prepare a proposal, but it must never self-approve
+        // an owner-controlled side effect. Leave the proposal pending so the
+        // authenticated owner can decide through the explicit approval path.
         check_session()?;
-        let decision =
-            chat_tools::decide(pool, installation, owner_id, session, &proposal_id, true).await?;
-        check_session()?;
-        if let Some((_, refreshed)) =
-            store::proposal_result(pool, installation, session, &response.id).await?
-        {
-            result = refreshed;
-        }
-        result["decision_message"] = Value::String(decision.content);
+        result["requires_owner_approval"] = Value::Bool(true);
+        return Ok(result);
     }
     result["tool_call_id"] = Value::String(step.tool_call_id.clone());
     Ok(result)

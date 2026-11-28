@@ -633,10 +633,15 @@ async fn pending_owner_proposal_pauses_plan_without_auto_approval() {
     assert_eq!(summary.plan.state, "authorized");
     assert_eq!(summary.executed, 0);
     assert!(summary.final_answer.is_none());
-    let step = store::load_steps(app.database().pool(), installation, &session, &authorized.id)
-        .await
-        .unwrap()
-        .remove(0);
+    let step = store::load_steps(
+        app.database().pool(),
+        installation,
+        &session,
+        &authorized.id,
+    )
+    .await
+    .unwrap()
+    .remove(0);
     assert_eq!(step.state, "authorized");
     let result: Value = serde_json::from_str(step.result_json.as_deref().unwrap()).unwrap();
     assert_eq!(result["status"], "pending");
